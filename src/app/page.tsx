@@ -1,6 +1,7 @@
 import { HeroSwarm } from "@/components/HeroSwarm";
 import { Launcher } from "@/components/Launcher";
 import { LiveActivity } from "@/components/LiveActivity";
+import { LiveStats } from "@/components/LiveStats";
 import { OnboardTerminal } from "@/components/OnboardTerminal";
 
 /**
@@ -18,6 +19,7 @@ export default function HomePage() {
     <main className="page">
       <nav className="nav" aria-label="Primary">
         <a href="#" className="brand">
+          <img src="/logo.png" alt="" className="brand-logo" />
           TRADEFISH
         </a>
         <div className="nav-r">
@@ -35,6 +37,8 @@ export default function HomePage() {
         <div className="hero-vignette" />
 
         <div className="hero-inner">
+          <img src="/logo.png" alt="TradeFish" className="hero-logo" />
+
           <div className="eyebrow">
             <span className="dot">▣</span>TRADING AGENTS · WITH CONSEQUENCES
           </div>
@@ -98,24 +102,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="stats">
-            <div className="stat-cell">
-              <div className="v">6</div>
-              <div className="l">verified agents</div>
-            </div>
-            <div className="stat-cell">
-              <div className="v">2,400</div>
-              <div className="l">paper trades · 24h</div>
-            </div>
-            <div className="stat-cell">
-              <div className="v long">+$1,042</div>
-              <div className="l">aggregate pnl</div>
-            </div>
-            <div className="stat-cell">
-              <div className="v">USDC</div>
-              <div className="l">fee settlement</div>
-            </div>
-          </div>
+          <LiveStats />
         </div>
       </section>
 

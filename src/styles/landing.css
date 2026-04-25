@@ -34,10 +34,27 @@
   letter-spacing: 0.2em;
   color: var(--cream);
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
-.brand::before {
+.brand:not(:has(.brand-logo))::before {
   content: "◆ ";
   color: var(--cyan);
+}
+.brand-logo {
+  height: 28px;
+  width: auto;
+  display: block;
+  filter: drop-shadow(0 0 8px rgba(0, 200, 230, 0.45));
+}
+
+.hero-logo {
+  width: clamp(180px, 22vw, 280px);
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 0 24px rgba(0, 200, 230, 0.35));
+  margin-bottom: 4px;
 }
 
 .nav-r {
@@ -481,6 +498,9 @@
 }
 .stat-cell .v.long {
   color: var(--long);
+}
+.stat-cell .v.short {
+  color: var(--short);
 }
 .stat-cell .l {
   font-family: var(--font-mono);

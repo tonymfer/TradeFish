@@ -1,196 +1,212 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { StateEvent, StateResponse } from "../app/_components/types";
 
 /**
  * Streaming agent-activity log shown in the onboarding section.
- * Seeded with 7 deterministic rows; appends a new row every 2.4s,
- * capped at 8 rows. Pure presentational — no real data feed.
+ * Polls GET /api/state every 2s and renders the last MAX_ROWS entries
+ * from `recentEvents`, mapped onto the row layout (ts/who/msg/pos/pnl).
+ *
+ * BE serializes recentEvents.message as pre-rendered strings — we parse
+ * them here for the per-type fields the row layout cares about. The
+ * regex shapes mirror src/app/api/state/route.ts at the time of T30.
  */
 
 interface ActivityRow {
-  id: number;
+  key: string;
   ts: string;
   who: string;
   msg: string;
   pos: string;
-  posCls: "long" | "short" | "";
+  posCls: "long" | "short" | "hold" | "";
   pnl: string;
   pnlCls: "up" | "down" | "";
 }
 
-const SEED: ActivityRow[] = [
-  {
-    id: 1,
-    ts: "14:02",
-    who: "NANSEN",
-    msg: "smart money +1,420 BTC, 60m",
-    pos: "LONG 0.4",
-    posCls: "long",
-    pnl: "+$24",
-    pnlCls: "up",
-  },
-  {
-    id: 2,
-    ts: "14:02",
-    who: "BNGUN",
-    msg: "liquidity ladder thinning above 64.4k",
-    pos: "LONG 0.6",
-    posCls: "long",
-    pnl: "+$38",
-    pnlCls: "up",
-  },
-  {
-    id: 3,
-    ts: "14:03",
-    who: "VIRTUALS",
-    msg: "contrarian-7: sentiment overheated",
-    pos: "SHORT 0.3",
-    posCls: "short",
-    pnl: "−$12",
-    pnlCls: "down",
-  },
-  {
-    id: 4,
-    ts: "14:03",
-    who: "FLOCK",
-    msg: "3/4 sub-agents agree LONG",
-    pos: "LONG 0.5",
-    posCls: "long",
-    pnl: "+$31",
-    pnlCls: "up",
-  },
-  {
-    id: 5,
-    ts: "14:04",
-    who: "RISK",
-    msg: "funding spike. recommend HOLD.",
-    pos: "HOLD",
-    posCls: "",
-    pnl: "±$0",
-    pnlCls: "",
-  },
-  {
-    id: 6,
-    ts: "14:04",
-    who: "PCS",
-    msg: "pool depth 2.1M USDT above mark",
-    pos: "LONG 0.4",
-    posCls: "long",
-    pnl: "+$18",
-    pnlCls: "up",
-  },
-  {
-    id: 7,
-    ts: "14:05",
-    who: "CONSENSUS",
-    msg: "tilt updated · LONG 67% conf",
-    pos: "LONG 1.0",
-    posCls: "long",
-    pnl: "+$94",
-    pnlCls: "up",
-  },
-];
-
-const STREAM: Array<Omit<ActivityRow, "id" | "ts">> = [
-  {
-    who: "NANSEN",
-    msg: "CEX→cold flow positive +$8.2M",
-    pos: "LONG 0.5",
-    posCls: "long",
-    pnl: "+$42",
-    pnlCls: "up",
-  },
-  {
-    who: "BNGUN",
-    msg: "mempool: 12 pending bids @ 64,250",
-    pos: "LONG 0.3",
-    posCls: "long",
-    pnl: "+$15",
-    pnlCls: "up",
-  },
-  {
-    who: "VIRTUALS",
-    msg: "twitter velocity 96th pct",
-    pos: "SHORT 0.2",
-    posCls: "short",
-    pnl: "−$8",
-    pnlCls: "down",
-  },
-  {
-    who: "PCS",
-    msg: "whale wallet 0x4f..2a accumulating",
-    pos: "LONG 0.4",
-    posCls: "long",
-    pnl: "+$22",
-    pnlCls: "up",
-  },
-  {
-    who: "FLOCK",
-    msg: "ensemble disagreement narrowing",
-    pos: "LONG 0.6",
-    posCls: "long",
-    pnl: "+$34",
-    pnlCls: "up",
-  },
-  {
-    who: "CONSENSUS",
-    msg: "updated · LONG 71% · MED risk",
-    pos: "LONG 1.2",
-    posCls: "long",
-    pnl: "+$112",
-    pnlCls: "up",
-  },
-];
-
 const MAX_ROWS = 8;
-const TICK_MS = 2400;
+const POLL_MS = 2000;
+
+// Positional regex groups (ES2017 target — no named groups).
+//   PRED_RE:    [1]=who [2]=dir [3]=asset [4]=size
+//   OPENED_RE:  [1]=asset [2]=price
+//   SETTLED_RE: [1]=asset [2]=open [3]=close
+//   REG_RE:     [1]=who
+const PRED_RE = /^(.+?)\s+(LONG|SHORT|HOLD)\s+(\S+)\s+@\s+\$([0-9]+(?:\.[0-9]+)?)/i;
+const OPENED_RE = /opened on\s+(\S+)\s+@\s+(\$[0-9,.]+|\?)/i;
+const SETTLED_RE =
+  /settled on\s+(\S+):\s+(\$[0-9,.]+|\?)\s+→\s+(\$[0-9,.]+|\?)/i;
+const REG_RE = /^(.+?)\s+registered$/i;
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
+function fmtTs(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "--:--";
+  return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1).trimEnd()}…`;
+}
+
+function dirCls(dir: string): "long" | "short" | "hold" {
+  if (dir === "LONG") return "long";
+  if (dir === "SHORT") return "short";
+  return "hold";
+}
+
+function eventToRow(event: StateEvent, index: number): ActivityRow {
+  const ts = fmtTs(event.ts);
+  const key = `${event.ts}-${event.type}-${index}`;
+  const msg = event.message ?? "";
+
+  if (event.type === "prediction.posted") {
+    const m = PRED_RE.exec(msg);
+    if (m) {
+      const who = m[1].trim().toUpperCase();
+      const dir = m[2].toUpperCase() as "LONG" | "SHORT" | "HOLD";
+      const asset = m[3];
+      const size = Number(m[4]);
+      return {
+        key,
+        ts,
+        who,
+        msg: `${dir} ${asset} · open position`,
+        pos: `${dir}${dir === "HOLD" ? "" : ` $${size.toFixed(0)}`}`,
+        posCls: dirCls(dir),
+        pnl: "—",
+        pnlCls: "",
+      };
+    }
+    return {
+      key,
+      ts,
+      who: "AGENT",
+      msg: truncate(msg, 60),
+      pos: "—",
+      posCls: "",
+      pnl: "—",
+      pnlCls: "",
+    };
+  }
+
+  if (event.type === "round.settled") {
+    const m = SETTLED_RE.exec(msg);
+    const close = m ? m[3] : "?";
+    return {
+      key,
+      ts,
+      who: "ROUND",
+      msg: `settled @ ${close}`,
+      pos: "—",
+      posCls: "",
+      pnl: "",
+      pnlCls: "",
+    };
+  }
+
+  if (event.type === "round.opened") {
+    const m = OPENED_RE.exec(msg);
+    const open = m ? m[2] : "?";
+    return {
+      key,
+      ts,
+      who: "ROUND",
+      msg: `opened @ ${open}`,
+      pos: "—",
+      posCls: "",
+      pnl: "",
+      pnlCls: "",
+    };
+  }
+
+  if (event.type === "agent.registered") {
+    const m = REG_RE.exec(msg);
+    const who = m ? m[1].trim() : "AGENT";
+    return {
+      key,
+      ts,
+      who: "NEW",
+      msg: `${who} registered`,
+      pos: "JOIN",
+      posCls: "",
+      pnl: "",
+      pnlCls: "",
+    };
+  }
+
+  return {
+    key,
+    ts,
+    who: "—",
+    msg: truncate(msg, 60),
+    pos: "—",
+    posCls: "",
+    pnl: "",
+    pnlCls: "",
+  };
+}
+
 export function LiveActivity() {
-  const [rows, setRows] = useState<ActivityRow[]>(SEED);
+  const [rows, setRows] = useState<ActivityRow[]>([]);
 
   useEffect(() => {
-    let nextId = SEED.length + 1;
-    let streamIndex = 0;
+    let cancelled = false;
 
-    const tick = () => {
-      const seed = STREAM[streamIndex % STREAM.length];
-      streamIndex += 1;
-      const now = new Date();
-      const ts = `${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
-      const next: ActivityRow = { id: nextId, ts, ...seed };
-      nextId += 1;
-      setRows((prev) => {
-        const merged = [...prev, next];
-        return merged.length > MAX_ROWS
-          ? merged.slice(merged.length - MAX_ROWS)
-          : merged;
-      });
+    async function tick() {
+      try {
+        const res = await fetch("/api/state", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as StateResponse;
+        if (cancelled) return;
+        const events = (json.recentEvents ?? []).slice(0, MAX_ROWS);
+        // recentEvents is sorted newest-first by BE; reverse so newest
+        // sits at the bottom of the rendered tape (matches the prior
+        // append-style feel and reads top-to-bottom chronologically).
+        const next = events.map(eventToRow).reverse();
+        setRows(next);
+      } catch {
+        // Swallow — keep last-known rows on transient errors.
+      }
+    }
+
+    tick();
+    const handle = window.setInterval(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(handle);
     };
-
-    const handle = window.setInterval(tick, TICK_MS);
-    return () => window.clearInterval(handle);
   }, []);
 
   return (
     <div className="activity-rows" aria-live="polite" aria-atomic="false">
-      {rows.map((row) => (
-        <div key={row.id} className="activity-row">
-          <span className="ts">{row.ts}</span>
-          <span className="who">{row.who}</span>
-          <span className="msg">{row.msg}</span>
-          <span className={`pos${row.posCls ? ` ${row.posCls}` : ""}`}>
-            {row.pos}
-          </span>
-          <span className={`pnl${row.pnlCls ? ` ${row.pnlCls}` : ""}`}>
-            {row.pnl}
-          </span>
+      {rows.length === 0 ? (
+        <div className="activity-row" aria-hidden="true">
+          <span className="ts">--:--</span>
+          <span className="who">…</span>
+          <span className="msg">connecting to /api/state</span>
+          <span className="pos">—</span>
+          <span className="pnl">—</span>
         </div>
-      ))}
+      ) : (
+        rows.map((row) => (
+          <div key={row.key} className="activity-row">
+            <span className="ts">{row.ts}</span>
+            <span className="who">{row.who}</span>
+            <span className="msg">{row.msg}</span>
+            <span className={`pos${row.posCls ? ` ${row.posCls}` : ""}`}>
+              {row.pos}
+            </span>
+            <span className={`pnl${row.pnlCls ? ` ${row.pnlCls}` : ""}`}>
+              {row.pnl || "—"}
+            </span>
+          </div>
+        ))
+      )}
     </div>
   );
 }
