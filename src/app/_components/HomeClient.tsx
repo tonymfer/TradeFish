@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UpDownBar } from "./UpDownBar";
 import { Leaderboard } from "./Leaderboard";
 import { EventTape } from "./EventTape";
@@ -10,7 +10,9 @@ import { DexChart } from "./DexChart";
 import { EntryStrip } from "./EntryStrip";
 import { LiveDot } from "./Panel";
 import { formatUsd } from "./format";
-import type { StateResponse } from "./types";
+import { RoundIntro } from "./RoundIntro";
+import { RecapCard } from "./RecapCard";
+import type { RoundDetail, StateResponse } from "./types";
 
 const POLL_MS = 1000;
 

@@ -39,6 +39,7 @@ type OpenRound = {
   status: "open";
   openedAt: string;
   openPriceCents: number;
+  questionText: string | null;
 };
 
 type OpenRoundResponse = {
@@ -47,6 +48,7 @@ type OpenRoundResponse = {
     asset: string;
     openedAt: string;
     openPriceCents: number;
+    questionText?: string | null;
   } | null;
 };
 
@@ -159,6 +161,7 @@ async function fetchOpenRound(): Promise<OpenRound | null> {
     status: "open",
     openedAt: body.openRound.openedAt,
     openPriceCents: body.openRound.openPriceCents,
+    questionText: body.openRound.questionText ?? null,
   };
 }
 
@@ -181,6 +184,7 @@ async function haikuRewriteThesis(
   signal: Signal,
   decision: Decision,
   templated: string,
+  questionText: string | null,
 ): Promise<string> {
   if (!anthropicClient) return templated;
   const userMessage = [
@@ -195,6 +199,10 @@ async function haikuRewriteThesis(
     `Rules: keep all the numbers from the template (they're real and load-bearing). Output a single paragraph (≤300 chars). No JSON, no fences, no preamble — just the thesis text.`,
   ].join("\n");
 
+  const systemText = questionText
+    ? `The user asked: ${questionText}\n\n${persona.systemPrompt}`
+    : persona.systemPrompt;
+
   try {
     const response = await anthropicClient.messages.create({
       model: HAIKU_MODEL,
@@ -203,7 +211,7 @@ async function haikuRewriteThesis(
       system: [
         {
           type: "text",
-          text: persona.systemPrompt,
+          text: systemText,
           cache_control: { type: "ephemeral" },
         },
       ],
@@ -221,6 +229,7 @@ async function haikuRewriteThesis(
 
 async function buildPrediction(
   persona: PersonaConfig,
+  questionText: string | null,
 ): Promise<PredictionRequest> {
   const signal = await persona.fetchSignal();
   const decision = clampDecision(persona.decide(signal));
@@ -232,7 +241,13 @@ async function buildPrediction(
 
   let thesis = persona.template(signal, decision).slice(0, 1500);
   if (USE_HAIKU && dailySpendUsd < DAILY_SPEND_CAP_USD) {
-    thesis = await haikuRewriteThesis(persona, signal, decision, thesis);
+    thesis = await haikuRewriteThesis(
+      persona,
+      signal,
+      decision,
+      thesis,
+      questionText,
+    );
   }
 
   return {
@@ -280,7 +295,7 @@ async function tickAgent(
 ) {
   let prediction: PredictionRequest;
   try {
-    prediction = await buildPrediction(persona);
+    prediction = await buildPrediction(persona, round.questionText);
   } catch (err) {
     console.warn(`[seed-agents] ${persona.name} signal/decide failed:`, err);
     return;

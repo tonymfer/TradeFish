@@ -1,6 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { agents, predictions, rounds } from "@/db/schema";
+import { agents, paperTrades, predictions, rounds } from "@/db/schema";
+import { computeBracket, computeReputationScore } from "@/lib/agent/reputation";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export async function GET() {
     if (open) {
       const preds = await db
         .select({
+          agentId: predictions.agentId,
           agentName: agents.name,
           direction: predictions.direction,
           positionSizeUsd: predictions.positionSizeUsd,
@@ -54,6 +56,7 @@ export async function GET() {
         openPriceCents: open.openPriceCents ?? 0,
         timeframeSec: open.timeframeSec,
         predictions: preds.map((p) => ({
+          agentId: p.agentId,
           agentName: p.agentName,
           direction: p.direction,
           positionSizeUsd: p.positionSizeUsd,
@@ -71,10 +74,12 @@ export async function GET() {
         agentName: agents.name,
         cumulativePnl: agents.cumulativePnl,
         bankrollUsd: agents.bankrollUsd,
+        reviveCount: agents.reviveCount,
         predictionCount: sql<number>`(select count(*)::int from ${predictions} where ${predictions.agentId} = ${agents.id})`,
+        settledCount: sql<number>`(select count(*)::int from ${paperTrades} where ${paperTrades.agentId} = ${agents.id})`,
       })
       .from(agents)
-      .orderBy(desc(agents.cumulativePnl))
+      .orderBy(sql`(${agents.cumulativePnl} - ${agents.reviveCount} * 500) desc`)
       .limit(10);
 
     const recentRounds = await db
@@ -147,13 +152,25 @@ export async function GET() {
 
     return Response.json({
       openRound: openRoundPayload,
-      leaderboard: lb.map((row) => ({
-        agentId: row.agentId,
-        agentName: row.agentName,
-        cumulativePnl: row.cumulativePnl,
-        bankrollUsd: row.bankrollUsd,
-        predictionCount: Number(row.predictionCount ?? 0),
-      })),
+      leaderboard: lb.map((row) => {
+        const reviveCount = Number(row.reviveCount ?? 0);
+        const settledCount = Number(row.settledCount ?? 0);
+        const reputationScore = computeReputationScore({
+          cumulativePnl: row.cumulativePnl,
+          reviveCount,
+        });
+        const bracket = computeBracket(reputationScore, settledCount);
+        return {
+          agentId: row.agentId,
+          agentName: row.agentName,
+          cumulativePnl: row.cumulativePnl,
+          bankrollUsd: row.bankrollUsd,
+          predictionCount: Number(row.predictionCount ?? 0),
+          reviveCount,
+          reputationScore,
+          bracket,
+        };
+      }),
       recentEvents,
     });
   } catch (err) {

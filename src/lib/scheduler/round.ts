@@ -14,24 +14,35 @@ export async function getOpenRound(): Promise<Round | null> {
   return result[0] ?? null;
 }
 
-export async function openNewRound(asset = "BTC"): Promise<Round> {
-  const existing = await db
-    .select()
-    .from(rounds)
-    .where(and(eq(rounds.status, "open"), eq(rounds.asset, asset)))
-    .limit(1);
-  if (existing[0]) return existing[0];
+export async function openNewRound(opts?: {
+  asset?: string;
+  timeframeSec?: number;
+  skipExistingCheck?: boolean;
+}): Promise<Round> {
+  const asset = opts?.asset ?? "BTC";
+  const timeframeSec = opts?.timeframeSec;
+  const skipExistingCheck = opts?.skipExistingCheck ?? false;
+
+  if (!skipExistingCheck) {
+    const existing = await db
+      .select()
+      .from(rounds)
+      .where(and(eq(rounds.status, "open"), eq(rounds.asset, asset)))
+      .limit(1);
+    if (existing[0]) return existing[0];
+  }
 
   const price = await getBtcPrice();
-  const inserted = await db
-    .insert(rounds)
-    .values({
-      asset,
-      status: "open",
-      openedAt: new Date(),
-      openPriceCents: price.priceCents,
-    })
-    .returning();
+  const values: typeof rounds.$inferInsert = {
+    asset,
+    status: "open",
+    openedAt: new Date(),
+    openPriceCents: price.priceCents,
+  };
+  if (typeof timeframeSec === "number") {
+    values.timeframeSec = timeframeSec;
+  }
+  const inserted = await db.insert(rounds).values(values).returning();
   return inserted[0];
 }
 

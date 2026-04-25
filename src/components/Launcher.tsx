@@ -3,65 +3,66 @@
 import { useState, type FormEvent } from "react";
 
 /**
- * Hero prompt launcher: market-question input + 6-agent roster picker
- * + try-this examples. On submit, navigates to `/arena?q=...&agents=...`
- * (the arena route is built in a later commit).
+ * Hero prompt launcher: free-form market question + try-this examples.
+ * On submit, POSTs to `/api/rounds/create` (server uses default
+ * timeframe/asset, all personas always run). Success → `/arena?fresh=1`,
+ * which tells the arena route to play the round-intro overlay.
  */
-
-interface RosterAgent {
-  id: string;
-  name: string;
-  tier: "WHALE" | "SHARK" | "TUNA" | "MINNOW";
-  color: string;
-}
-
-const ROSTER: readonly RosterAgent[] = [
-  { id: "nansen", name: "NANSEN", tier: "WHALE", color: "#a8d8e8" },
-  { id: "bngun", name: "BNGUN", tier: "SHARK", color: "#c4ecf5" },
-  { id: "flock", name: "FLOCK", tier: "SHARK", color: "#92c8e0" },
-  { id: "pcs", name: "PCS", tier: "TUNA", color: "#7ab2cc" },
-  { id: "risk", name: "RISK", tier: "TUNA", color: "#ffb84a" },
-  { id: "virtuals", name: "VIRTUALS", tier: "MINNOW", color: "#e07560" },
-];
 
 const EXAMPLES = [
   {
-    label: "BTC 60m direction",
-    query: "BTC next 60 minutes — direction & size?",
+    label: "BTC 60s",
+    query: "BTC up or down in the next 60 seconds?",
   },
-  { label: "ETH/BTC cross", query: "ETH/BTC ratio — long or short the cross?" },
-  { label: "SOL breakout", query: "SOL breakout above $180 — fade or follow?" },
-  { label: "Memecoin 4h", query: "Best memecoin trade for the next 4 hours?" },
+  {
+    label: "SOL $200",
+    query: "Will SOL break $200 by minute close?",
+  },
+  {
+    label: "ETH momentum",
+    query: "ETH next minute — momentum or reversion?",
+  },
+  {
+    label: "BTC vs ETH",
+    query: "BTC vs ETH next 60s — which wins?",
+  },
 ];
-
-const DEFAULT_QUERY = "BTC next 60 minutes — direction & size?";
 
 export function Launcher() {
   const [query, setQuery] = useState("");
-  const [enlisted, setEnlisted] = useState<Set<string>>(
-    () => new Set(ROSTER.map((agent) => agent.id)),
-  );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggleAgent = (id: string) => {
-    setEnlisted((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      // Never empty — keep at least one
-      if (next.size === 0) next.add(id);
-      return next;
-    });
-  };
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const finalQuery = query.trim() || DEFAULT_QUERY;
-    const agents = Array.from(enlisted).join(",");
-    const url = `/arena?q=${encodeURIComponent(finalQuery)}&agents=${encodeURIComponent(agents)}`;
-    window.location.href = url;
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setError("Type a market question first.");
+      return;
+    }
+
+    setError(null);
+    setSubmitting(true);
+
+    try {
+      const res = await fetch("/api/rounds/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionText: trimmed }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Request failed (${res.status})`);
+      }
+
+      window.location.href = "/arena?fresh=1";
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to launch round.";
+      setError(message);
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -75,14 +76,24 @@ export function Launcher() {
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="ask the swarm anything — e.g. BTC next 60 minutes, direction & size?"
+          placeholder="ask the swarm anything — e.g. BTC up or down in the next 60 seconds?"
           autoComplete="off"
           aria-label="Market question"
+          maxLength={280}
+          disabled={submitting}
         />
-        <button type="submit">
-          LAUNCH ARENA <span className="arr">→</span>
+        <button type="submit" disabled={submitting}>
+          {submitting ? (
+            "LAUNCHING…"
+          ) : (
+            <>
+              LAUNCH ROUND <span className="arr">→</span>
+            </>
+          )}
         </button>
       </form>
+
+      {error ? <p className="launcher-error">{error}</p> : null}
 
       <div className="examples">
         <span className="lbl">▸ TRY</span>
@@ -92,45 +103,11 @@ export function Launcher() {
             className="ex"
             type="button"
             onClick={() => setQuery(example.query)}
+            disabled={submitting}
           >
             {example.label}
           </button>
         ))}
-      </div>
-
-      <div className="roster">
-        <div className="head">
-          <span className="ttl">▸ DRAFT YOUR SWARM</span>
-          <span>
-            <span className="cnt">{enlisted.size}</span> / {ROSTER.length}{" "}
-            ENLISTED
-          </span>
-        </div>
-        <div className="roster-grid">
-          {ROSTER.map((agent) => {
-            const active = enlisted.has(agent.id);
-            return (
-              <button
-                key={agent.id}
-                type="button"
-                className={`agent-pill${active ? " active" : ""}`}
-                onClick={() => toggleAgent(agent.id)}
-                aria-pressed={active}
-              >
-                <span className="check" aria-hidden="true">
-                  ✓
-                </span>
-                <span
-                  className="swatch"
-                  style={{ background: agent.color }}
-                  aria-hidden="true"
-                />
-                <span className="name">{agent.name}</span>
-                <span className="tier">{agent.tier}</span>
-              </button>
-            );
-          })}
-        </div>
       </div>
     </div>
   );

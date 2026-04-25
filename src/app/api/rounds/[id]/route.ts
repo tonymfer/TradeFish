@@ -26,6 +26,7 @@ export async function GET(
 
     const preds = await db
       .select({
+        agentId: predictions.agentId,
         agentName: agents.name,
         direction: predictions.direction,
         positionSizeUsd: predictions.positionSizeUsd,
@@ -41,6 +42,7 @@ export async function GET(
 
     const trades = await db
       .select({
+        agentId: paperTrades.agentId,
         agentName: agents.name,
         direction: predictions.direction,
         positionSizeUsd: predictions.positionSizeUsd,
@@ -64,6 +66,7 @@ export async function GET(
       openPriceCents: round.openPriceCents ?? 0,
       closePriceCents: round.closePriceCents ?? null,
       predictions: preds.map((p) => ({
+        agentId: p.agentId,
         agentName: p.agentName,
         direction: p.direction,
         positionSizeUsd: p.positionSizeUsd,
@@ -73,6 +76,7 @@ export async function GET(
         createdAt: p.createdAt.toISOString(),
       })),
       settledTrades: trades.map((t) => ({
+        agentId: t.agentId,
         agentName: t.agentName,
         direction: t.direction,
         positionSizeUsd: t.positionSizeUsd,

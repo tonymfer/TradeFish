@@ -30,6 +30,11 @@ export const agents = pgTable("agents", {
   cumulativePnl: bigint("cumulative_pnl", { mode: "number" })
     .notNull()
     .default(0),
+  reviveCount: bigint("revive_count", { mode: "number" })
+    .notNull()
+    .default(0),
+  suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+  lastRevivedAt: timestamp("last_revived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -20,6 +20,7 @@ export type StateOpenRound = {
   openPriceCents: number;
   timeframeSec: number;
   predictions: StatePrediction[];
+  questionText?: string | null;
 };
 
 export type StateLeaderboardRow = {

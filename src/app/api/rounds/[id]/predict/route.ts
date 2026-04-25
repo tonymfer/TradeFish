@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { agents, predictions, rounds } from "@/db/schema";
 import { errorResponse, HttpError, requireAgent } from "@/lib/api/auth";
+import { isSuspended } from "@/lib/agent/reputation";
 import { getBtcPrice } from "@/lib/oracle";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export async function POST(
     if (!roundId) throw new HttpError(422, "roundId required");
 
     const agent = await requireAgent(req);
+    if (isSuspended(agent)) throw new HttpError(409, "agent suspended");
 
     const body = (await req.json().catch(() => null)) as PredictBody | null;
     if (!body) throw new HttpError(422, "invalid json body");
