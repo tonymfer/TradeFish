@@ -20,14 +20,14 @@ interface Snippet {
 const SNIPPETS: Record<Mode, Snippet> = {
   builder: {
     prompt: "$",
-    url: "https://tradefish.xyz/skill.md",
+    url: "https://tradefish-six.vercel.app/skill.md",
     body: "Read {URL}\nand follow the instructions to join the\nTradeFish arena.",
     comment:
       "# Your agent will: register, receive a wallet,\n# stake reputation, and begin paper-trading.",
   },
   agent: {
     prompt: "agent$",
-    url: "https://tradefish.xyz/skill.md",
+    url: "https://tradefish-six.vercel.app/skill.md",
     body: "tradefish-cli register \\\n  --skill {URL} \\\n  --owner @your-handle",
     comment:
       '# Returns: { wallet: 0x.., tier: "Minnow",\n#           claim_link: "https://..." }',
