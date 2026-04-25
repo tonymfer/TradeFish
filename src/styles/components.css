@@ -1,0 +1,248 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   TRADEFISH — Component classes
+   Distilled from /Users/tomo/Downloads/TradeFish/styles.css. Tokens are
+   imported from tokens.css; this file only defines the .tf-* component
+   primitives (terminal chrome, scanlines, grid-bg, vignette, chips,
+   keyframes). Never use box-shadow as a border. Sharp pixel corners only.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.mono {
+  font-family: var(--font-mono);
+}
+.pixel {
+  font-family: var(--font-pixel);
+  letter-spacing: 0.02em;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+.upper {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+/* ── CRT scanlines ──────────────────────────────────────── */
+.tf-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(168, 216, 232, 0.025) 3px,
+    rgba(0, 0, 0, 0) 4px
+  );
+  z-index: 50;
+  mix-blend-mode: overlay;
+}
+
+/* ── Dot lattice background ─────────────────────────────── */
+.tf-grid-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    rgba(168, 216, 232, 0.1) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+  background-position: 0 0;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 90%);
+}
+
+/* ── Vignette ────────────────────────────────────────────── */
+.tf-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 35%,
+    rgba(0, 0, 0, 0.65) 100%
+  );
+  z-index: 40;
+}
+
+/* ── Terminal window chrome ─────────────────────────────── */
+.tf-term {
+  background: var(--surface-deep);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-0);
+  position: relative;
+  font-family: var(--font-mono);
+}
+.tf-term-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(168, 216, 232, 0.04), transparent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+.tf-term-head .dots {
+  display: flex;
+  gap: 4px;
+}
+.tf-term-head .dots span {
+  width: 8px;
+  height: 8px;
+  background: var(--orange-dim);
+  border-radius: 50%;
+}
+.tf-term-head .dots span:nth-child(2) {
+  background: var(--amber);
+}
+.tf-term-head .dots span:nth-child(3) {
+  background: var(--phosphor);
+}
+
+/* ── Card (terminal panel) ──────────────────────────────── */
+.tf-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-0);
+  position: relative;
+}
+
+/* ── Phosphor / glow ────────────────────────────────────── */
+.tf-glow-cyan {
+  box-shadow:
+    0 0 0 1px rgba(168, 216, 232, 0.45),
+    0 0 20px rgba(168, 216, 232, 0.25);
+}
+.tf-glow-long {
+  box-shadow:
+    0 0 0 1px rgba(127, 224, 168, 0.4),
+    0 0 18px rgba(127, 224, 168, 0.22);
+}
+.tf-glow-short {
+  box-shadow:
+    0 0 0 1px rgba(224, 117, 96, 0.4),
+    0 0 18px rgba(224, 117, 96, 0.22);
+}
+.tf-text-glow {
+  text-shadow:
+    0 0 8px currentColor,
+    0 0 16px currentColor;
+}
+
+/* ── Chip / pill ────────────────────────────────────────── */
+.tf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-0);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  background: var(--surface-glass);
+}
+
+.tf-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-0);
+  background: var(--cyan);
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* ── Caret blink ────────────────────────────────────────── */
+@keyframes tf-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+.tf-caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  margin-left: 2px;
+  background: currentColor;
+  vertical-align: -2px;
+  animation: tf-blink 1s steps(1) infinite;
+}
+
+/* ── Numbers ────────────────────────────────────────────── */
+.tf-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.tf-tick-up {
+  color: var(--long);
+}
+.tf-tick-down {
+  color: var(--short);
+}
+
+/* ── Keyframes ──────────────────────────────────────────── */
+@keyframes tf-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes tf-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  47% {
+    opacity: 1;
+  }
+  48% {
+    opacity: 0.4;
+  }
+  49% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  89% {
+    opacity: 0.6;
+  }
+  90% {
+    opacity: 1;
+  }
+}
+.tf-flicker {
+  animation: tf-flicker 6s infinite;
+}
+
+/* ── Pixel divider ──────────────────────────────────────── */
+.tf-hr {
+  border: none;
+  border-top: 1px dashed var(--line);
+  margin: 8px 0;
+}
+
+/* ── Reduced motion guard ───────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

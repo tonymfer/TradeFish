@@ -1,0 +1,184 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   TRADEFISH — Foundation tokens (color + type)
+   Distilled from /Users/tomo/Downloads/TradeFish/colors_and_type.css.
+   The @font-face is intentionally omitted — Departure Mono is loaded by
+   next/font/local in app/layout.tsx, which exposes --font-departure on
+   <html>. The brand --font-* aliases below all point at that variable so
+   design-system classes keep working unchanged.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Backgrounds ─────────────────────────────────────────
+     Cool-black ocean. Deepest at bg-0; bg-3 is a near-surface
+     panel fill. Always set --bg-0 on <body>. */
+  --bg-0: #050a14;
+  --bg-1: #08111f;
+  --bg-2: #0d1830;
+  --bg-3: #162540;
+
+  /* ── Surfaces (translucent over bg-0) ─────────────────── */
+  --surface: rgba(13, 24, 48, 0.78);
+  --surface-2: rgba(22, 37, 64, 0.85);
+  --surface-glass: rgba(168, 216, 232, 0.04);
+  --surface-deep: rgba(4, 8, 16, 0.92);
+
+  /* ── Hairlines (cyan-tinted) ──────────────────────────── */
+  --line: rgba(168, 216, 232, 0.14);
+  --line-strong: rgba(168, 216, 232, 0.32);
+  --line-bright: rgba(168, 216, 232, 0.55);
+
+  /* ── Foreground ───────────────────────────────────────── */
+  --fg: #f0e9e1;
+  --fg-dim: #a8b8c8;
+  --fg-faint: #6a7a8a;
+  --fg-faintest: #3a4858;
+
+  /* ── Brand cyan (THE accent — scarce) ─────────────────── */
+  --cyan: #a8d8e8;
+  --cyan-bright: #c4ecf5;
+  --cyan-dim: #6a9bb5;
+
+  /* Aliases kept for legacy classes from styles.css */
+  --orange: #a8d8e8;
+  --orange-bright: #c4ecf5;
+  --orange-dim: #6a9bb5;
+  --coral: #a8d8e8;
+  --cream: #f0e9e1;
+  --rust: #6a9bb5;
+  --deep-blue: #4a7ab8;
+
+  /* ── Trading semantic ─────────────────────────────────── */
+  --long: #7fe0a8;
+  --long-bg: rgba(127, 224, 168, 0.1);
+  --short: #e07560;
+  --short-bg: rgba(224, 117, 96, 0.1);
+  --hold: #ffb84a;
+  --hold-bg: rgba(255, 184, 74, 0.08);
+
+  /* ── Phosphor accents (use rarely) ────────────────────── */
+  --phosphor: #7fe0a8;
+  --amber: #ffb84a;
+  --magenta: #d96baa;
+
+  /* ── Sponsor / agent color slots ──────────────────────── */
+  --s-flock: #66c0d4;
+  --s-nansen: #7fe05c;
+  --s-virtuals: #d96baa;
+  --s-pancake: #ffb84a;
+  --s-bananagun: #f5d76e;
+  --s-base: #6e8af0;
+  --s-risk: #e09276;
+
+  /* ── Type stack — all aliases point at Departure Mono.
+        --font-departure is set by next/font/local in layout.tsx. ── */
+  --font-mono:
+    var(--font-departure), "JetBrains Mono", "IBM Plex Mono", ui-monospace,
+    "SF Mono", "Menlo", monospace;
+  --font-pixel: var(--font-departure), "VT323", ui-monospace, monospace;
+  --font-display: var(--font-departure), "VT323", ui-monospace, monospace;
+  --font-sans: var(--font-departure), "JetBrains Mono", ui-monospace, monospace;
+
+  /* ── Type scale ───────────────────────────────────────── */
+  --t-hero: 56px;
+  --t-display: 32px;
+  --t-h1: 24px;
+  --t-h2: 18px;
+  --t-body: 14px;
+  --t-small: 12px;
+  --t-mini: 10px;
+  --t-micro: 9px;
+
+  /* ── Spacing & radii ──────────────────────────────────── */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+
+  --r-0: 0;
+  --r-pill: 999px;
+
+  /* ── Motion ───────────────────────────────────────────── */
+  --ease-step: steps(1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --t-fast: 150ms;
+  --t-med: 280ms;
+}
+
+/* ── Base reset ──────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-0);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--t-body);
+  font-feature-settings: "tnum", "zero";
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Semantic role classes ───────────────────────────────── */
+.t-hero {
+  font-family: var(--font-pixel);
+  font-size: var(--t-hero);
+  letter-spacing: 0.04em;
+  color: var(--cream);
+}
+.t-display {
+  font-family: var(--font-pixel);
+  font-size: var(--t-display);
+  letter-spacing: 0.04em;
+  color: var(--cream);
+}
+.t-h1 {
+  font-family: var(--font-pixel);
+  font-size: var(--t-h1);
+  letter-spacing: 0.04em;
+  color: var(--cream);
+}
+.t-h2 {
+  font-family: var(--font-pixel);
+  font-size: var(--t-h2);
+  letter-spacing: 0.04em;
+  color: var(--cream);
+}
+.t-body {
+  font-family: var(--font-mono);
+  font-size: var(--t-body);
+  color: var(--fg-dim);
+}
+.t-small {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--fg-dim);
+}
+.t-label {
+  font-family: var(--font-mono);
+  font-size: var(--t-mini);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.t-tier {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+::selection {
+  background: rgba(168, 216, 232, 0.35);
+  color: var(--bg-0);
+}

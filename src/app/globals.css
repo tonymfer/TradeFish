@@ -1,26 +1,15 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   TRADEFISH — globals
+   Order matters: tokens (CSS variables) → component primitives → page
+   styles. Tailwind v4 stays installed for layout utilities if needed,
+   but the design system mandates raw CSS via tokens; we don't reach for
+   Tailwind utilities in component markup.
+   ═══════════════════════════════════════════════════════════════════════ */
+
 @import "tailwindcss";
+@import "../styles/tokens.css";
+@import "../styles/components.css";
+@import "../styles/landing.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+/* Tailwind preflight is fine — the design system's body rules in
+   tokens.css are loaded after and win. Nothing else to add here. */
