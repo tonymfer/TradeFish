@@ -45,7 +45,9 @@ export async function settleRound(roundId: string): Promise<Round | null> {
   if (!round) return null;
 
   const price = await getBtcPrice();
-  await settlePredictionsForRound(roundId);
+  await settlePredictionsForRound(roundId, {
+    exitPriceCents: price.priceCents,
+  });
 
   const finalized = await db
     .update(rounds)

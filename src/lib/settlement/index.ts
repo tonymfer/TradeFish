@@ -25,6 +25,7 @@ export function computePnlUsd(
 
 export async function settlePredictionsForRound(
   roundId: string,
+  options: { exitPriceCents?: number } = {},
 ): Promise<SettlementResult> {
   return db.transaction(async (tx) => {
     const roundRows = await tx
@@ -35,8 +36,15 @@ export async function settlePredictionsForRound(
     const round = roundRows[0];
     if (!round) return { roundId, predictionsSettled: 0 };
 
+    // Caller-supplied close price takes precedence — settleRound passes the
+    // freshly-fetched oracle price here. Fallback chain handles direct calls
+    // that arrive after the round has already been finalized with a stored
+    // closePriceCents.
     const exitPriceCents =
-      round.closePriceCents ?? round.openPriceCents ?? null;
+      options.exitPriceCents ??
+      round.closePriceCents ??
+      round.openPriceCents ??
+      null;
     if (exitPriceCents == null) {
       console.error(
         `[settlement] round ${roundId} has no close or open price; skipping`,
