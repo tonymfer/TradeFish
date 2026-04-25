@@ -14,13 +14,25 @@ export async function getOpenRound(): Promise<Round | null> {
   return result[0] ?? null;
 }
 
-export async function openNewRound(asset = "BTC"): Promise<Round> {
-  const existing = await db
-    .select()
-    .from(rounds)
-    .where(and(eq(rounds.status, "open"), eq(rounds.asset, asset)))
-    .limit(1);
-  if (existing[0]) return existing[0];
+export async function openNewRound(opts?: {
+  asset?: string;
+  timeframeSec?: number;
+  questionText?: string;
+  skipExistingCheck?: boolean;
+}): Promise<Round> {
+  const asset = opts?.asset ?? "BTC";
+  const timeframeSec = opts?.timeframeSec;
+  const questionText = opts?.questionText;
+  const skipExistingCheck = opts?.skipExistingCheck ?? false;
+
+  if (!skipExistingCheck) {
+    const existing = await db
+      .select()
+      .from(rounds)
+      .where(and(eq(rounds.status, "open"), eq(rounds.asset, asset)))
+      .limit(1);
+    if (existing[0]) return existing[0];
+  }
 
   const price = await getBtcPrice();
   const inserted = await db
@@ -30,6 +42,8 @@ export async function openNewRound(asset = "BTC"): Promise<Round> {
       status: "open",
       openedAt: new Date(),
       openPriceCents: price.priceCents,
+      ...(timeframeSec !== undefined ? { timeframeSec } : {}),
+      ...(questionText !== undefined ? { questionText } : {}),
     })
     .returning();
   return inserted[0];

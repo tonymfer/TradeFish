@@ -40,6 +40,7 @@ export const rounds = pgTable("rounds", {
     .primaryKey()
     .default(sql`gen_random_uuid()`),
   asset: text("asset").notNull().default("BTC"),
+  questionText: text("question_text"),
   status: roundStatus("status").notNull().default("open"),
   timeframeSec: integer("timeframe_sec").notNull().default(300),
   openedAt: timestamp("opened_at", { withTimezone: true })
