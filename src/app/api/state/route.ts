@@ -69,6 +69,13 @@ export async function GET() {
       };
     }
 
+    // Filter out zero-prediction zombie registrations (e.g. duplicate
+    // sign-ups that never posted a prediction). Without this, the
+    // top-10 by cumulative_pnl includes ties at 0 and arbitrary order
+    // can surface zombies above active personas with 20+ predictions.
+    // Then order by reputation-adjusted PnL primarily, prediction
+    // count as a tiebreaker so active agents always rank above
+    // identical-PnL inactive ones.
     const lb = await db
       .select({
         agentId: agents.id,
@@ -80,7 +87,12 @@ export async function GET() {
         settledCount: sql<number>`(select count(*)::int from ${paperTrades} where ${paperTrades.agentId} = ${agents.id})`,
       })
       .from(agents)
-      .orderBy(sql`(${agents.cumulativePnl} - ${agents.reviveCount} * 500) desc`)
+      .where(
+        sql`(select count(*) from ${predictions} where ${predictions.agentId} = ${agents.id}) > 0`,
+      )
+      .orderBy(
+        sql`(${agents.cumulativePnl} - ${agents.reviveCount} * 500) desc, (select count(*) from ${predictions} where ${predictions.agentId} = ${agents.id}) desc`,
+      )
       .limit(10);
 
     const recentRounds = await db

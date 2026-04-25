@@ -1,11 +1,16 @@
-// Round logic (open / settle / entry prices) reads from DexScreener so
-// PnL settlement reconciles with the chart pool the audience is watching.
-export { getBtcPrice, type OraclePrice } from "./dexscreener";
+// All price reads (round open / settle / entry / live ticker) go through
+// Pyth Hermes. DexScreener-as-oracle was tried but the WBTC/USDC pool we
+// chart was dormant ($0 volume, 0 trades/hour); every round settled at
+// entry == exit, every paper_trade had pnl_usd == 0, and the leaderboard
+// went flat. Pyth aggregates Coinbase/Binance/Kraken and ticks every
+// ~400ms — settlement gets real movement, the live card animates.
+//
+// The tradeoff: displayed price won't perfectly match the embedded
+// DexScreener chart's pool price (10-50 bps drift typical). The chart
+// is now a visual reference, not the price-of-truth.
+export { getBtcPrice, type OraclePrice } from "./pyth";
 
-// Live ticker on the price card needs sub-second cadence. DEX pools
-// tick at trade frequency, which is often minutes between trades on
-// low-volume pairs (the WBTC/USDC pool we chart had 0 trades / 0
-// volume in the last hour during testing — frozen at $77,344.80).
-// Pyth Hermes aggregates Coinbase / Binance / Kraken / etc. and
-// updates roughly every 400ms. Used by /api/oracle/price → MarkPrice.
+// Same source for now — kept as a separate alias so future refactors
+// can route the live ticker differently from settlement without
+// touching every caller.
 export { getBtcPrice as getLivePrice } from "./pyth";
