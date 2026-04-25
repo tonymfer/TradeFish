@@ -14,8 +14,10 @@ export type AssetChartEntry = {
 
 export const ASSET_CHART_REGISTRY: Record<string, AssetChartEntry> = {
   BTC: {
+    // Uniswap V3 WBTC/USDC 0.05% — actual live flow (~$1.9M/24h, 10+
+    // trades/hour). The 0.3% pool 0x99ac…ABc35 looks dead: 0 trades/hr.
     chain: "ethereum",
-    pairAddress: "0x99ac8cA7087fA4A2A1FB6357269965A2014ABc35",
+    pairAddress: "0x9a772018FbD77fcD2d25657e5C547BAfF3Fd7D16",
     pairLabel: "WBTC/USDC",
     dexLabel: "Uniswap V3",
   },
