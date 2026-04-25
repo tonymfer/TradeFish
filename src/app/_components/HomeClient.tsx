@@ -12,6 +12,7 @@ import { DexChart } from "./DexChart";
 import { EntryStrip } from "./EntryStrip";
 import { LiveDot } from "./Panel";
 import { RoundIntro } from "./RoundIntro";
+import { RoundConclusion } from "./RoundConclusion";
 import { RecapCard } from "./RecapCard";
 import { formatUsd } from "./format";
 import type { RoundDetail, RoundStatus, StateResponse } from "./types";
@@ -49,6 +50,7 @@ export function HomeClient() {
   const prevRoundStatusRef = useRef<RoundStatus | null>(null);
   const recapFetchInFlightRef = useRef<string | null>(null);
   const [recapRound, setRecapRound] = useState<RoundDetail | null>(null);
+  const [conclusionRound, setConclusionRound] = useState<RoundDetail | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,7 +150,9 @@ export function HomeClient() {
         .then((r) => (r.ok ? r.json() : null))
         .then((detail: RoundDetail | null) => {
           if (detail && detail.id === settledRoundId) {
-            setRecapRound(detail);
+            // Conclusion plays first (full-viewport takeover);
+            // RecapCard slides in after conclusion's onDone.
+            setConclusionRound(detail);
           }
         })
         .catch(() => {
@@ -174,9 +178,9 @@ export function HomeClient() {
   const introQuestionText =
     (round as OpenRoundWithQuestion | null)?.questionText ??
     "WILL THE MARKET MOVE?";
-  // Hide the underlying arena while the intro is playing so any z-index
-  // shenanigans elsewhere (sticky bars, etc.) can't peek through.
-  const showArena = !(introActive && !introDone);
+  // Hide the underlying arena while the intro OR the round-end conclusion
+  // is playing so the takeover owns the viewport.
+  const showArena = !(introActive && !introDone) && conclusionRound === null;
   const utc = new Date(now).toISOString().slice(11, 19);
   const liveLabel =
     status === "ok" ? "LIVE" : status === "loading" ? "CONNECTING" : "DEGRADED";
@@ -369,6 +373,19 @@ export function HomeClient() {
         onDone={handleIntroDone}
       />
     )}
+
+    <AnimatePresence>
+      {conclusionRound && (
+        <RoundConclusion
+          key={conclusionRound.id}
+          round={conclusionRound}
+          onDone={() => {
+            setRecapRound(conclusionRound);
+            setConclusionRound(null);
+          }}
+        />
+      )}
+    </AnimatePresence>
 
     <AnimatePresence>
       {recapRound && (
