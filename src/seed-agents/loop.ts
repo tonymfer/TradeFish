@@ -57,7 +57,7 @@ type PredictionResponse = {
 };
 
 const apiBaseUrl = (): string =>
-  process.env.TRADEFISH_API_BASE_URL ?? "http://localhost:3000";
+  process.env.TRADEFISH_API_BASE_URL ?? "http://localhost:3100";
 
 const ownerEmail = (): string =>
   process.env.SEED_AGENT_OWNER_EMAIL ?? "seed-agents@tradefish.local";
