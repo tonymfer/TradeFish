@@ -144,6 +144,19 @@ async function fetchOpenRound(): Promise<OpenRound | null> {
   };
 }
 
+async function tickScheduler(): Promise<void> {
+  // The runner is the off-Vercel scheduler driver in production: Vercel
+  // Hobby crons can't run minute-by-minute, so each loop cycle pokes the
+  // tick endpoint. The route is idempotent (no-op when nothing to do).
+  const res = await fetch(`${apiBaseUrl()}/api/scheduler/tick`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    console.warn(`[seed-agents] /api/scheduler/tick ${res.status}`);
+  }
+}
+
 const anthropicClient = new Anthropic();
 
 function buildUserMessage(round: OpenRound): string {
@@ -293,6 +306,14 @@ export async function runLoop(): Promise<void> {
         `[seed-agents] daily spend cap hit ($${dailySpendUsd.toFixed(2)} ≥ $${DAILY_SPEND_CAP_USD}); halting`
       );
       return;
+    }
+
+    // Drive the scheduler each cycle so prod (Hobby tier, no Vercel cron)
+    // still opens / settles rounds without an external cron service.
+    try {
+      await tickScheduler();
+    } catch (err) {
+      console.warn(`[seed-agents] tickScheduler failed:`, err);
     }
 
     let round: OpenRound | null = null;
