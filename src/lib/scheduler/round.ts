@@ -17,10 +17,12 @@ export async function getOpenRound(): Promise<Round | null> {
 export async function openNewRound(opts?: {
   asset?: string;
   timeframeSec?: number;
+  questionText?: string;
   skipExistingCheck?: boolean;
 }): Promise<Round> {
   const asset = opts?.asset ?? "BTC";
   const timeframeSec = opts?.timeframeSec;
+  const questionText = opts?.questionText;
   const skipExistingCheck = opts?.skipExistingCheck ?? false;
 
   if (!skipExistingCheck) {
@@ -33,16 +35,17 @@ export async function openNewRound(opts?: {
   }
 
   const price = await getBtcPrice();
-  const values: typeof rounds.$inferInsert = {
-    asset,
-    status: "open",
-    openedAt: new Date(),
-    openPriceCents: price.priceCents,
-  };
-  if (typeof timeframeSec === "number") {
-    values.timeframeSec = timeframeSec;
-  }
-  const inserted = await db.insert(rounds).values(values).returning();
+  const inserted = await db
+    .insert(rounds)
+    .values({
+      asset,
+      status: "open",
+      openedAt: new Date(),
+      openPriceCents: price.priceCents,
+      ...(timeframeSec !== undefined ? { timeframeSec } : {}),
+      ...(questionText !== undefined ? { questionText } : {}),
+    })
+    .returning();
   return inserted[0];
 }
 

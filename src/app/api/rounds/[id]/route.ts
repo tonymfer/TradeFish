@@ -65,6 +65,7 @@ export async function GET(
       settledAt: round.settledAt ? round.settledAt.toISOString() : null,
       openPriceCents: round.openPriceCents ?? 0,
       closePriceCents: round.closePriceCents ?? null,
+      questionText: round.questionText ?? null,
       predictions: preds.map((p) => ({
         agentId: p.agentId,
         agentName: p.agentName,

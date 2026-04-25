@@ -1,5 +1,4 @@
 import { getOpenRound } from "@/lib/scheduler/round";
-import { getQuestion } from "@/lib/round-questions";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +16,7 @@ export async function GET() {
         timeframeSec: round.timeframeSec,
         openedAt: round.openedAt.toISOString(),
         openPriceCents: round.openPriceCents ?? 0,
-        questionText: getQuestion(round.id),
+        questionText: round.questionText ?? null,
       },
     });
   } catch (err) {

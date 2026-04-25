@@ -3,19 +3,18 @@
 import { useState, type FormEvent } from "react";
 
 /**
- * Hero prompt launcher: free-form market question + try-this examples.
- * On submit, POSTs to `/api/rounds/create` (server uses default
- * timeframe/asset, all personas always run). Success → `/arena?fresh=1`,
- * which tells the arena route to play the round-intro overlay.
+ * Hero prompt launcher: market-question input + try-this examples.
+ * On submit, POSTs to `/api/rounds/create` and navigates to
+ * `/arena?fresh=1` so the arena entrance plays the round-intro overlay.
  */
 
 const EXAMPLES = [
   {
-    label: "BTC 60s",
+    label: "BTC 60s direction",
     query: "BTC up or down in the next 60 seconds?",
   },
   {
-    label: "SOL $200",
+    label: "SOL $200 break",
     query: "Will SOL break $200 by minute close?",
   },
   {
@@ -37,7 +36,7 @@ export function Launcher() {
     event.preventDefault();
     const trimmed = query.trim();
     if (!trimmed) {
-      setError("Type a market question first.");
+      setError("Type a market question to launch a round.");
       return;
     }
 
@@ -52,15 +51,13 @@ export function Launcher() {
       });
 
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Request failed (${res.status})`);
+        throw new Error(`create failed (${res.status})`);
       }
 
       window.location.href = "/arena?fresh=1";
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to launch round.";
-      setError(message);
+      console.error("[launcher] create round failed", err);
+      setError("Couldn't launch the round. Try again in a moment.");
       setSubmitting(false);
     }
   };
@@ -83,13 +80,8 @@ export function Launcher() {
           disabled={submitting}
         />
         <button type="submit" disabled={submitting}>
-          {submitting ? (
-            "LAUNCHING…"
-          ) : (
-            <>
-              LAUNCH ROUND <span className="arr">→</span>
-            </>
-          )}
+          {submitting ? "LAUNCHING…" : "LAUNCH ROUND"}{" "}
+          <span className="arr">→</span>
         </button>
       </form>
 
@@ -103,7 +95,6 @@ export function Launcher() {
             className="ex"
             type="button"
             onClick={() => setQuery(example.query)}
-            disabled={submitting}
           >
             {example.label}
           </button>

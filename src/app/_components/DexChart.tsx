@@ -23,7 +23,7 @@ export function DexChart({ asset }: Props) {
     );
   }
 
-  const src = `https://dexscreener.com/${entry.chain}/${entry.pairAddress}?embed=1&theme=dark&info=0`;
+  const src = `https://dexscreener.com/${entry.chain}/${entry.pairAddress}?embed=1&loadChartSettings=0&trades=0&tabs=0&info=0&chartLeftToolbar=0&chartDefaultOnMobile=1&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1S`;
 
   return (
     <div className="overflow-hidden rounded border border-zinc-800/80 bg-zinc-950/70">

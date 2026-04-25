@@ -55,6 +55,7 @@ export async function GET() {
         openedAt: open.openedAt.toISOString(),
         openPriceCents: open.openPriceCents ?? 0,
         timeframeSec: open.timeframeSec,
+        questionText: open.questionText ?? null,
         predictions: preds.map((p) => ({
           agentId: p.agentId,
           agentName: p.agentName,

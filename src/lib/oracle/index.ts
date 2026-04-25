@@ -1,1 +1,1 @@
-export { getBtcPrice, type OraclePrice } from "./pyth";
+export { getBtcPrice, type OraclePrice } from "./dexscreener";
