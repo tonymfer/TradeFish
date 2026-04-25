@@ -3,6 +3,7 @@ export type Direction = "LONG" | "SHORT" | "HOLD";
 export type RoundStatus = "open" | "settling" | "settled";
 
 export type StatePrediction = {
+  agentId: string;
   agentName: string;
   direction: Direction;
   positionSizeUsd: number;
@@ -29,6 +30,9 @@ export type StateLeaderboardRow = {
   cumulativePnl: number;
   bankrollUsd: number;
   predictionCount: number;
+  reviveCount: number;
+  reputationScore: number;
+  bracket: string;
 };
 
 export type StateEvent = {
@@ -48,6 +52,7 @@ export type StateResponse = {
 };
 
 export type RoundDetailSettledTrade = {
+  agentId: string;
   agentName: string;
   direction: Direction;
   positionSizeUsd: number;
@@ -67,4 +72,50 @@ export type RoundDetail = {
   closePriceCents: number | null;
   predictions: StatePrediction[];
   settledTrades: RoundDetailSettledTrade[];
+};
+
+export type AgentBracket =
+  | "Unranked"
+  | "Bronze"
+  | "Silver"
+  | "Gold"
+  | "Whale"
+  | "Legend";
+
+export type AgentRecentTrade = {
+  tradeId: string;
+  roundId: string;
+  asset: string;
+  direction: Direction;
+  positionSizeUsd: number;
+  entryPriceCents: number;
+  exitPriceCents: number;
+  pnlUsd: number;
+  settledAt: string;
+};
+
+export type AgentOpenPrediction = {
+  predictionId: string;
+  roundId: string;
+  direction: Direction;
+  positionSizeUsd: number;
+  entryPriceCents: number;
+  createdAt: string;
+};
+
+export type AgentProfile = {
+  agentId: string;
+  name: string;
+  bankrollUsd: number;
+  cumulativePnl: number;
+  reviveCount: number;
+  reputationScore: number;
+  bracket: AgentBracket;
+  predictionCount: number;
+  settledCount: number;
+  winRate: number | null;
+  suspended: boolean;
+  createdAt: string;
+  recentTrades: AgentRecentTrade[];
+  openPredictions: AgentOpenPrediction[];
 };

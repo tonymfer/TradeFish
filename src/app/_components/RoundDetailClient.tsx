@@ -359,12 +359,14 @@ function RoundRoster({
         const dirCls =
           p.direction === "LONG" ? "l" : p.direction === "SHORT" ? "s" : "h";
         const settled = detail.settledTrades.find(
-          (t) => t.agentName === p.agentName,
+          (t) => t.agentId === p.agentId,
         );
         return (
-          <div key={`${p.agentName}-${p.createdAt}-${i}`} className="ag-row">
+          <div key={`${p.agentId}-${p.createdAt}-${i}`} className="ag-row">
             <span className="who">
-              <span className="name">{p.agentName}</span>
+              <Link href={`/agents/${p.agentId}`} className="agent-link name">
+                {p.agentName}
+              </Link>
             </span>
             <span className={`pos ${dirCls}`}>
               {p.direction} · {formatUsd(p.positionSizeUsd * 100)}

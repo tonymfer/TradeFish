@@ -65,6 +65,17 @@ type PredictionResponse = {
   entryPriceCents: number;
 };
 
+type SelfState = {
+  agentId: string;
+  bankrollUsd: number;
+  cumulativePnl: number;
+  reviveCount: number;
+  reputationScore: number;
+  bracket: string;
+  suspended: boolean;
+  // (other fields ignored for now)
+};
+
 const apiBaseUrl = (): string =>
   process.env.TRADEFISH_API_BASE_URL ?? "http://localhost:3100";
 
@@ -288,11 +299,87 @@ async function postPrediction(
   };
 }
 
+async function fetchSelf(apiKey: string): Promise<SelfState | null> {
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/agents/me`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      console.warn(`[seed-agents] /api/agents/me ${res.status}`);
+      return null;
+    }
+    const body = (await res.json()) as Partial<SelfState> & {
+      agentId?: string;
+      bankrollUsd?: number;
+    };
+    if (typeof body.agentId !== "string") {
+      console.warn(`[seed-agents] /api/agents/me missing agentId`);
+      return null;
+    }
+    return {
+      agentId: body.agentId,
+      bankrollUsd: body.bankrollUsd ?? 0,
+      cumulativePnl: body.cumulativePnl ?? 0,
+      reviveCount: body.reviveCount ?? 0,
+      reputationScore: body.reputationScore ?? 0,
+      bracket: body.bracket ?? "Unranked",
+      suspended: body.suspended ?? false,
+    };
+  } catch (err) {
+    console.warn(`[seed-agents] fetchSelf failed:`, err);
+    return null;
+  }
+}
+
+async function reviveSelf(agent: SeedAgentKey): Promise<boolean> {
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/agents/me/revive`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${agent.apiKey}` },
+    });
+    if (!res.ok) {
+      console.warn(
+        `[seed-agents] revive failed for ${agent.name}: ${res.status} ${await res.text()}`,
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(`[seed-agents] reviveSelf failed for ${agent.name}:`, err);
+    return false;
+  }
+}
+
 async function tickAgent(
   agent: SeedAgentKey,
   persona: PersonaConfig,
   round: OpenRound,
 ) {
+  // a. self-query
+  const me = await fetchSelf(agent.apiKey);
+  if (!me) {
+    console.warn(`[seed-agents] ${persona.name} self-query failed, skipping cycle`);
+    return;
+  }
+
+  // b. auto-revive if suspended (gated by env so users can opt out)
+  if (me.suspended) {
+    const autoRevive = process.env.AUTO_REVIVE !== "0";
+    if (!autoRevive) {
+      console.log(
+        `[seed-agents] ${agent.name} suspended (AUTO_REVIVE=0), skipping`,
+      );
+      return;
+    }
+    const ok = await reviveSelf(agent);
+    if (!ok) return;
+    console.log(
+      `[seed-agents] ${agent.name} revived (count=${me.reviveCount + 1})`,
+    );
+  }
+
+  // c. build prediction (existing flow — fetchSignal → decide → template)
   let prediction: PredictionRequest;
   try {
     prediction = await buildPrediction(persona, round.questionText);
@@ -300,6 +387,16 @@ async function tickAgent(
     console.warn(`[seed-agents] ${persona.name} signal/decide failed:`, err);
     return;
   }
+
+  // d. low-bankroll size cap: if bankroll < 200, cap positionSizeUsd at 100
+  if (me.bankrollUsd < 200 && prediction.positionSizeUsd > 100) {
+    console.log(
+      `[seed-agents] ${agent.name} bankroll=$${me.bankrollUsd} → cap size ${prediction.positionSizeUsd}→100`,
+    );
+    prediction = { ...prediction, positionSizeUsd: 100 };
+  }
+
+  // e. post (existing)
   const { result, response } = await postPrediction(agent, round.id, prediction);
   if (result === "ok" && response) {
     console.log(

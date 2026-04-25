@@ -139,3 +139,49 @@
   font-size: 10px;
   word-break: break-all;
 }
+
+/* ── T24 prep: agent profile links + bracket pills ──────────────────── */
+.agent-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.agent-link:hover {
+  color: var(--cyan, #a8d8e8);
+  border-bottom-color: var(--cyan, #a8d8e8);
+}
+
+.bracket-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg-faint, #8aa3b3);
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.bracket-pill.unranked {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg-faintest, #5a6b78);
+}
+
+.rev-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(212, 169, 96, 0.16);
+  color: var(--revive, #d4a960);
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+}

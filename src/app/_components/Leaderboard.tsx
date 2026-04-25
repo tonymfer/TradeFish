@@ -1,41 +1,35 @@
 "use client";
 
+import Link from "next/link";
 import type { StateLeaderboardRow } from "./types";
 import { formatBankroll, formatPnl } from "./format";
 
 /**
- * Side-rail leaderboard — agents ranked by cumulative PnL, rendered as
- * the canonical `ag-row` pattern from question.html. Each row shows
- * agent name, position summary (here: rank pill), and a meta-line
- * with tier / PnL / bankroll.
+ * Side-rail leaderboard — agents ranked by reputationScore (server-sorted),
+ * rendered as the canonical `ag-row` pattern from question.html. Each row
+ * shows agent name (linked to /agents/[id]), bracket pill, the primary
+ * reputation score, plus a meta-line with cumPnl, revive count, and
+ * bankroll. Agents with reviveCount > 0 also get a small amber chip in
+ * the bankroll column.
  */
 
 interface Props {
   rows: StateLeaderboardRow[];
 }
 
-function tierGlyph(rank: number): string {
-  if (rank === 0) return "◆◆◆";
-  if (rank <= 2) return "◆◆";
-  if (rank <= 4) return "◆";
-  if (rank <= 6) return "◇";
-  return "·";
+function bracketLabel(bracket: string): string {
+  return (bracket || "Unranked").toUpperCase();
 }
 
-function tierLabel(rank: number): string {
-  if (rank === 0) return "LEGEND";
-  if (rank <= 2) return "WHALE";
-  if (rank <= 4) return "GOLD";
-  if (rank <= 6) return "SILVER";
-  return "BRONZE";
+function isUnranked(bracket: string): boolean {
+  return !bracket || bracket.toLowerCase() === "unranked";
 }
 
 export function Leaderboard({ rows }: Props) {
-  const sorted = [...rows]
-    .sort((a, b) => b.cumulativePnl - a.cumulativePnl)
-    .slice(0, 10);
+  // API already sorts by reputationScore desc — preserve that order.
+  const top = rows.slice(0, 10);
 
-  if (sorted.length === 0) {
+  if (top.length === 0) {
     return (
       <div className="roster-empty">
         ▸ NO AGENTS YET · WAITING ON FIRST PREDICTION
@@ -45,31 +39,57 @@ export function Leaderboard({ rows }: Props) {
 
   return (
     <div className="roster">
-      {sorted.map((row, i) => {
+      {top.map((row) => {
         const pnlClass =
           row.cumulativePnl > 0
             ? "pnl-up"
             : row.cumulativePnl < 0
               ? "pnl-dn"
               : "";
+        const repClass =
+          row.reputationScore > 0
+            ? "l"
+            : row.reputationScore < 0
+              ? "s"
+              : "h";
+        const unranked = isUnranked(row.bracket);
         return (
           <div key={row.agentId} className="ag-row">
             <span className="who">
-              <span className="name">{row.agentName}</span>
+              <Link
+                href={`/agents/${row.agentId}`}
+                className="agent-link name"
+              >
+                {row.agentName}
+              </Link>
+              <span
+                className={`bracket-pill${unranked ? " unranked" : ""}`}
+                aria-label={`bracket ${row.bracket}`}
+              >
+                {bracketLabel(row.bracket)}
+              </span>
             </span>
-            <span className={`pos ${row.cumulativePnl >= 0 ? "l" : "s"}`}>
-              {formatPnl(row.cumulativePnl)}
+            <span className={`pos ${repClass}`}>
+              {formatPnl(row.reputationScore)}
             </span>
             <span className="meta-line">
-              <span className="tier">
-                {tierGlyph(i)} {tierLabel(i)}
-              </span>
               <span>preds {row.predictionCount}</span>
+              <span>
+                cum{" "}
+                <span className={pnlClass}>
+                  {formatPnl(row.cumulativePnl)}
+                </span>
+              </span>
               <span>
                 bank{" "}
                 <span className={pnlClass}>
                   {formatBankroll(row.bankrollUsd)}
                 </span>
+                {row.reviveCount > 0 ? (
+                  <span className="rev-chip" aria-label={`revived ${row.reviveCount}`}>
+                    ↻{row.reviveCount}
+                  </span>
+                ) : null}
               </span>
             </span>
           </div>

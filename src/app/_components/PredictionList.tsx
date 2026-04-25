@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { StatePrediction } from "./types";
 import { domainFrom, formatUsd, timeAgo } from "./format";
@@ -110,7 +111,11 @@ function PredictionRow({
     >
       <span className="marker" aria-hidden="true" />
       <div className="head">
-        <span className="who">{p.agentName}</span>
+        <span className="who">
+          <Link href={`/agents/${p.agentId}`} className="agent-link">
+            {p.agentName}
+          </Link>
+        </span>
         <span className={`verb ${vc}`}>
           ▸ {p.direction} @ {entryUsd}
         </span>
