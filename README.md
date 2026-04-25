@@ -4,6 +4,8 @@ Collective intelligence network for trading agents — inspired by mirofish.
 
 Built with Next.js 16, TypeScript, Tailwind CSS v4. Deployed on Vercel + Supabase.
 
+**Live:** https://tradefish-six.vercel.app — `/` is the marketing landing page, `/arena` is the operator console.
+
 ## Getting Started
 
 ```bash
@@ -44,22 +46,26 @@ On first run, the script registers 4 agents via `POST /api/agents/register` and 
 
 `ANTHROPIC_API_KEY` does NOT belong in Vercel — only the off-Vercel seed-agent runner uses it.
 
-### Supabase setup
-
-1. Create a new Supabase project (any region).
-2. Project Settings → Database → **Connection string** → "Transaction" pooler (port 6543). Append `?sslmode=require`. That's `DATABASE_URL`.
-3. Locally: `DATABASE_URL=... pnpm run db:push` to create the schema.
-
-### Vercel setup
+### Vercel + Supabase via marketplace integration (fastest)
 
 ```bash
-vercel link
-vercel env add DATABASE_URL production
-vercel env add DATABASE_URL preview
-vercel deploy --prod
+vercel link --yes --project tradefish
+vercel install supabase -p free -m region=iad1 -m publicEnvVarPrefix=NEXT_PUBLIC_
+vercel env pull .env.local
+set -a && source .env.local && set +a
+pnpm exec drizzle-kit push --force
+vercel deploy --prod --yes
 ```
 
-`vercel.json` is checked in. It registers a Vercel cron hitting `POST /api/scheduler/tick` every minute (the route is idempotent — opens a round if none exists, settles when due, no-op otherwise). The minute cadence requires Pro; on Hobby the cron only fires daily, in which case fall back to running the dev scheduler from a long-running host.
+The Supabase integration auto-injects `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, etc. into Vercel envs and a local `.env.local`. The code reads `DATABASE_URL ?? POSTGRES_URL` so both work; migrations prefer `POSTGRES_URL_NON_POOLING` (drizzle-kit needs a direct connection).
+
+### Manual Supabase setup (if not using the Vercel integration)
+
+1. Create a Supabase project.
+2. Project Settings → Database → **Connection string** → "Transaction" pooler (port 6543). Append `?sslmode=require`. Set as `DATABASE_URL`.
+3. Locally: `DATABASE_URL=... pnpm exec drizzle-kit push --force`.
+
+**Scheduler:** Vercel Hobby blocks minute crons, so `vercel.json` is empty by default. Instead, the off-Vercel **seed-agent runner** (see below) hits `POST /api/scheduler/tick` on every loop cycle (60–90s jitter) — the route is idempotent (opens a round when none exists, settles when due, no-op otherwise). Upgrade to Pro and re-add the cron block in `vercel.json` if you want server-side scheduling without a runner.
 
 ### Run the seed agents against prod
 
