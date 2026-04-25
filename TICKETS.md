@@ -25,18 +25,21 @@ If no eligible ticket (all blocked or done), report `STATUS: WAITING` and check 
 
 ---
 
-## T1 — DB schema (SQLite + Drizzle)
+## T1 — DB schema (Supabase Postgres + Drizzle)
 - agent: be
 - status: pending
 - blockedBy: []
-- estimate: 20m
-- files: `src/db/schema.ts`, `src/db/client.ts`, `drizzle.config.ts`, `package.json`, `.gitignore`
-- libs: `drizzle-orm`, `better-sqlite3`, `drizzle-kit` (devDep)
+- estimate: 25m
+- files: `src/db/schema.ts`, `src/db/client.ts`, `drizzle.config.ts`, `package.json`, `.gitignore`, `.env.example`
+- libs: `drizzle-orm`, `postgres` (postgres-js driver), `drizzle-kit` (devDep)
 - acceptance:
+  - **Stack: Supabase Postgres** (deploy target is Vercel + Supabase). Reads `DATABASE_URL` env var (Supabase pooled connection string, port 6543, `?sslmode=require`).
   - 5 tables: `agents (id, name, ownerEmail, apiKey, bankrollUsd default 1000, cumulativePnl default 0, createdAt)`, `rounds (id, asset default 'BTC', status enum 'open'/'settling'/'settled', timeframeSec default 300, openedAt, settledAt, openPriceCents, closePriceCents)`, `predictions (id, agentId, roundId, direction enum 'LONG'/'SHORT'/'HOLD', confidence, positionSizeUsd, thesis text, sourceUrl text, entryPriceCents, createdAt)`, `paper_trades (id, predictionId, agentId, roundId, exitPriceCents, pnlUsd, settledAt)`, `oracle_snapshots (id, asset, priceCents, fetchedAt, source)`.
-  - Drizzle schema exports + migrations applied to `.data/tradefish.db` (gitignored).
-  - `bun run db:push` creates schema cleanly on a fresh checkout.
-  - Export `db` from `src/db/client.ts`.
+  - Drizzle schema exports. Use Drizzle's pgTable / pgEnum. UUIDs (`gen_random_uuid()`) for primary keys; cents as `bigint`; PnL as `bigint` cents (signed).
+  - `pnpm run db:push` (uses `drizzle-kit push`) creates schema cleanly on a fresh Supabase project.
+  - Export `db` from `src/db/client.ts` — single shared `postgres` client with sensible pooling for Next 16 route handlers (use globalThis singleton to survive HMR).
+  - Add `typecheck` script (already present from lead) and a `db:push` script.
+  - `.env.example` lists `DATABASE_URL`, `ANTHROPIC_API_KEY` (placeholder).
 
 ## T2 — Pyth Hermes BTC price
 - agent: be
@@ -137,14 +140,16 @@ If no eligible ticket (all blocked or done), report `STATUS: WAITING` and check 
   - Each persona has distinct prompt instructing thesis voice + a curated list of 5 hardcoded source URLs the agent picks from.
   - Cost cap: simple `_dailySpendCents` counter; halt at $5000 cents/day.
 
-## T10 — Vercel deploy + smoke test
+## T10 — Vercel + Supabase deploy + smoke test
 - agent: ag
 - status: pending
 - blockedBy: [T7, T8, T9]
-- estimate: 25m
-- files: `vercel.json`, `.env.example`, `README.md` (deploy section)
+- estimate: 30m
+- files: `vercel.json`, `.env.example` (already touched in T1 — extend), `README.md` (deploy section)
 - acceptance:
-  - Deployed to a public Vercel URL.
-  - Env vars set: `ANTHROPIC_API_KEY`, `DATABASE_URL` (or stick with bundled SQLite via fly volume / Turso fallback if Vercel can't write to disk).
-  - Smoke test from a fresh browser: home page loads, leaderboard shows 4 seed agents, an open round exists with current BTC price, predictions appear within 2 minutes.
-  - Note: SQLite + Vercel doesn't persist across function invocations. **If this fails fast, swap to Turso (libsql) — same SQLite syntax, free tier, ~10 min migration**. Document the fallback in README.
+  - **Stack: Vercel (web/API) + Supabase (Postgres).** Persistence story is solved by Supabase — no Turso fallback needed.
+  - Vercel project linked, `DATABASE_URL` (Supabase pooled connection string) and `ANTHROPIC_API_KEY` configured as Vercel env vars (Production + Preview).
+  - `vercel.json` registers a Vercel cron hitting `POST /api/scheduler/tick` every minute (replaces dev `setInterval`); the route is idempotent so cron firing while a round is open is a no-op.
+  - Seed-agent loop runs **off-Vercel** (locally on the lead's laptop, or any always-on host) hitting the deployed API base URL — Vercel functions can't host long-running loops. Document the runner command in README.
+  - Smoke test from a fresh browser on the deployed URL: home page loads, leaderboard shows 4 seed agents, an open round exists with current BTC price, predictions appear within 2 minutes once the seed-agent loop is started.
+  - README deploy section: env var list, Supabase project setup (run `pnpm run db:push`), Vercel project setup, how to start the seed-agent runner against prod.

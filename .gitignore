@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# seed-agent api keys (registered against deployed API)
+.data/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
