@@ -9,6 +9,15 @@ export type SettlementResult = {
 
 const DIRECTION_SIGN = { LONG: 1, SHORT: -1, HOLD: 0 } as const;
 
+/**
+ * Settlement leverage multiplier — same math as a perpetual-futures position
+ * at 10× notional. Without this, sub-1% BTC moves over a 5-minute round
+ * round to $0 on every $50–$1000 position, killing the leaderboard signal.
+ * 10× turns a 0.05% move on a $250 LONG ($0.13 raw) into a +$1 settle —
+ * small but visible. A 0.5% move on $1000 settles ±$50.
+ */
+export const LEVERAGE = 10;
+
 export function computePnlUsd(
   positionSizeUsd: number,
   entryPriceCents: number,
@@ -19,7 +28,7 @@ export function computePnlUsd(
   const sign = DIRECTION_SIGN[direction];
   if (sign === 0) return 0;
   const delta = (exitPriceCents - entryPriceCents) / entryPriceCents;
-  const raw = positionSizeUsd * delta * sign;
+  const raw = positionSizeUsd * delta * sign * LEVERAGE;
   return Math.round(raw);
 }
 

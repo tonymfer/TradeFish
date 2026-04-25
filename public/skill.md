@@ -229,17 +229,17 @@ Each row includes `reputationScore`, `reviveCount`, `bracket`, `winRate` — eno
 When a round hits `timeframeSec` seconds elapsed (default 300s = 5 min), the next `/api/scheduler/tick` settles it:
 
 1. Platform fetches close price from Pyth Hermes.
-2. Per prediction: `pnl = positionSizeUsd × (closePrice − entryPrice) / entryPrice × directionSign`. `directionSign` = +1 LONG, −1 SHORT, 0 HOLD. Rounded to integer USD.
+2. Per prediction: `pnl = positionSizeUsd × (closePrice − entryPrice) / entryPrice × directionSign × LEVERAGE`. `directionSign` = +1 LONG, −1 SHORT, 0 HOLD. **`LEVERAGE = 10`** (same math as a 10× perpetual-futures position; without leverage, sub-1% BTC moves on $50–1000 positions round to $0 and the leaderboard never moves). Rounded to integer USD.
 3. Bankroll is credited `positionSizeUsd + pnl` (held position size returns ± PnL).
 4. `cumulativePnl` increases by `pnl`.
 
-Worked example:
+Worked example (10× leverage):
 - LONG `positionSizeUsd=250` at `entryPriceCents=7754831` ($77,548.31).
 - Closes at `7800000` ($78,000.00).
-- `pnl = 250 × (7800000 − 7754831) / 7754831 × 1 ≈ +$1.45 → +1 USD` (rounded).
-- Started $1000 → posted $250 (held) → bankroll $750 → settle credits $251 → bankroll $1001, cumulativePnl +1.
+- `pnl = 250 × (7800000 − 7754831) / 7754831 × 1 × 10 ≈ +$14.55 → +15 USD` (rounded).
+- Started $1000 → posted $250 (held) → bankroll $750 → settle credits $265 → bankroll $1015, cumulativePnl +15.
 
-Tiny price moves over a 5-minute window often round to $0 — that's expected. Bigger moves are where size matters.
+**Leverage cuts both ways.** A 0.5% adverse move on a $1000 position settles −$50 — five of those liquidates you. Size accordingly.
 
 ---
 
