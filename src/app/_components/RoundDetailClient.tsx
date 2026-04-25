@@ -5,12 +5,15 @@ import { useEffect, useState } from "react";
 import type { RoundDetail } from "./types";
 import { UpDownBar } from "./UpDownBar";
 import { PredictionList } from "./PredictionList";
-import { DirectionBadge, LiveDot, Panel } from "./Panel";
+import { LiveDot } from "./Panel";
 import { formatPnl, formatUsd, timeAgo } from "./format";
 
 const POLL_MS = 2000;
 
-type Props = { roundId: string };
+interface Props {
+  roundId: string;
+}
+
 type Status = "loading" | "ok" | "error" | "missing";
 
 export function RoundDetailClient({ roundId }: Props) {
@@ -53,17 +56,119 @@ export function RoundDetailClient({ roundId }: Props) {
     };
   }, [roundId]);
 
-  return (
-    <div className="mx-auto flex min-h-screen w-full max-w-[1400px] flex-col gap-3 px-4 py-4">
-      <Header roundId={roundId} status={status} now={now} />
+  const utc = new Date(now).toISOString().slice(11, 19);
+  const liveLabel =
+    status === "ok"
+      ? "LIVE"
+      : status === "loading"
+        ? "CONNECTING"
+        : status === "missing"
+          ? "MISSING"
+          : "DEGRADED";
+  const liveState =
+    status === "ok"
+      ? ("live" as const)
+      : status === "loading"
+        ? ("connecting" as const)
+        : ("degraded" as const);
 
-      {data ? (
-        <>
-          <UpDownBar
-            round={
-              data.status === "settled"
-                ? null
-                : {
+  const settled = data?.status === "settled";
+  const totalPnl =
+    data?.settledTrades?.reduce((acc, t) => acc + t.pnlUsd, 0) ?? 0;
+
+  return (
+    <main className="q-app">
+      <div className="topbar">
+        <div className="topbar-l">
+          <Link className="brand" href="/">
+            TRADEFISH
+          </Link>
+          <div className="crumbs">
+            <Link href="/">HOME</Link>
+            <span className="sep">/</span>
+            <Link href="/arena">ARENA</Link>
+            <span className="sep">/</span>
+            <span className="now">R-{roundId.slice(0, 8).toUpperCase()}</span>
+          </div>
+        </div>
+        <div className="topbar-r">
+          <span>
+            NETWORK<span className="v">BASE.L2</span>
+          </span>
+          <span>
+            ORACLE<span className="v">PYTH</span>
+          </span>
+          <span className={liveState}>
+            <LiveDot state={liveState} />
+            <span style={{ marginLeft: 6 }}>{liveLabel}</span>
+          </span>
+          <span>
+            UTC<span className="v">{utc}</span>
+          </span>
+        </div>
+      </div>
+
+      <div className="stage">
+        <div className="main">
+          {data ? (
+            <>
+              <div className="qhead">
+                <div className="meta-top">
+                  <span className="id">
+                    ▸ R-{data.id.slice(0, 8).toUpperCase()}
+                  </span>
+                  <span>·</span>
+                  <span className="chain">BASE</span>
+                  <span>·</span>
+                  <span>
+                    OPENED
+                    <span className="v"> {timeOnly(data.openedAt)}</span>
+                  </span>
+                  {data.settledAt ? (
+                    <>
+                      <span>·</span>
+                      <span>
+                        SETTLED
+                        <span className="v"> {timeOnly(data.settledAt)}</span>
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+                <h1>
+                  Will <span className="acc">${data.asset}</span> close above
+                  its open price in {data.timeframeSec}s?
+                </h1>
+                <div className="meta-bot">
+                  <span>
+                    HORIZON<span className="v">{data.timeframeSec}s</span>
+                  </span>
+                  <span>
+                    OPEN
+                    <span className="v">{formatUsd(data.openPriceCents)}</span>
+                  </span>
+                  {data.closePriceCents ? (
+                    <span>
+                      CLOSE
+                      <span className="v">
+                        {formatUsd(data.closePriceCents)}
+                      </span>
+                    </span>
+                  ) : null}
+                  <span>
+                    STATUS
+                    <span className="v live">
+                      {" "}
+                      ▸ {data.status.toUpperCase()}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {settled ? (
+                <SettledStrip detail={data} totalPnl={totalPnl} />
+              ) : (
+                <UpDownBar
+                  round={{
                     id: data.id,
                     asset: data.asset,
                     status: data.status,
@@ -71,158 +176,215 @@ export function RoundDetailClient({ roundId }: Props) {
                     openPriceCents: data.openPriceCents,
                     timeframeSec: data.timeframeSec,
                     predictions: data.predictions,
-                  }
-            }
-            now={now}
-          />
+                  }}
+                  now={now}
+                />
+              )}
 
-          {data.status === "settled" ? (
-            <SettledSummary detail={data} />
-          ) : null}
+              <PredictionList predictions={data.predictions} now={now} />
+            </>
+          ) : (
+            <div className="qhead">
+              <div className="meta-top">
+                <span className="id">
+                  ▸ R-{roundId.slice(0, 8).toUpperCase()}
+                </span>
+                <span>·</span>
+                <span className="chain">BASE</span>
+              </div>
+              <h1>
+                {status === "missing" ? (
+                  <>
+                    <span className="acc">Round not found.</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="acc">Connecting</span> to round…
+                  </>
+                )}
+              </h1>
+              <div className="meta-bot">
+                <span>
+                  STATUS<span className="v">▸ {liveLabel}</span>
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
 
-          <PredictionList
-            predictions={data.predictions}
-            now={now}
-            variant="full"
-          />
-        </>
-      ) : (
-        <Panel title="Round" right={status.toUpperCase()}>
-          <div className="px-4 py-10 text-center text-xs text-zinc-500">
-            {status === "missing"
-              ? "Round not found."
-              : "Connecting to round…"}
+        <div className="side">
+          <div className="panel-hd">
+            <span className="ttl">
+              {data ? `${data.asset} ▸ ${settled ? "SETTLED" : "LIVE"}` : "—"}
+            </span>
+            <span className="meta">PYTH</span>
           </div>
-        </Panel>
-      )}
-    </div>
+          <div className="price-card">
+            <div className="lbl">▸ {settled ? "CLOSE" : "OPEN"} PRICE</div>
+            <div className="px">
+              {data
+                ? formatUsd(
+                    settled
+                      ? (data.closePriceCents ?? data.openPriceCents)
+                      : data.openPriceCents,
+                  )
+                : "—"}
+            </div>
+            <div className={`delta ${settled && totalPnl < 0 ? "down" : ""}`}>
+              {settled
+                ? `realized ${formatPnl(totalPnl)}`
+                : data
+                  ? "open · awaiting close"
+                  : "—"}
+            </div>
+            <div className="src">
+              SOURCE <span className="v">PYTH HERMES</span>
+            </div>
+          </div>
+
+          <div className="panel-hd">
+            <span className="ttl">▸ AGENTS IN ROUND</span>
+            <span className="meta">{data?.predictions.length ?? 0}</span>
+          </div>
+          <RoundRoster detail={data} now={now} />
+        </div>
+      </div>
+
+      <div className="statusbar">
+        <div className="grp">
+          <span>
+            <span className={status === "ok" ? "ok" : ""}>●</span> {liveLabel} ·
+            POLL 2s
+          </span>
+          <span>
+            EVENTS<span className="v"> /api/rounds/{roundId.slice(0, 8)}</span>
+          </span>
+        </div>
+        <div className="grp">
+          <span>
+            UTC<span className="v"> {utc}</span>
+          </span>
+        </div>
+      </div>
+    </main>
   );
 }
 
-function Header({
-  roundId,
-  status,
-  now,
+function SettledStrip({
+  detail,
+  totalPnl,
 }: {
-  roundId: string;
-  status: Status;
-  now: number;
+  detail: RoundDetail;
+  totalPnl: number;
 }) {
-  const time = new Date(now).toISOString().slice(11, 19);
+  const tone = totalPnl > 0 ? "up" : totalPnl < 0 ? "down" : "";
   return (
-    <header className="flex items-center justify-between border-b border-zinc-900 pb-3">
-      <div className="flex items-baseline gap-3">
-        <Link
-          href="/arena"
-          className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 transition-colors hover:text-zinc-200"
+    <div className="settle-block">
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
+          color: "var(--cyan)",
+        }}
+      >
+        ▸ SETTLED · NET PNL{" "}
+        <span
+          style={{
+            color:
+              tone === "up"
+                ? "var(--long)"
+                : tone === "down"
+                  ? "var(--short)"
+                  : "var(--cream)",
+          }}
         >
-          ← ARENA
-        </Link>
-        <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">
-          /
-        </span>
-        <span className="font-mono text-xs text-zinc-300">
-          round {roundId.slice(0, 8)}
+          {formatPnl(totalPnl)}
         </span>
       </div>
-      <div className="flex items-center gap-4 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-        <span className="flex items-center gap-2">
-          <LiveDot on={status === "ok"} />
-          {status === "ok"
-            ? "LIVE"
-            : status === "loading"
-              ? "CONNECTING"
-              : status === "missing"
-                ? "MISSING"
-                : "DEGRADED"}
-        </span>
-        <span className="tabular-nums text-zinc-400">UTC {time}</span>
-      </div>
-    </header>
-  );
-}
-
-function SettledSummary({ detail }: { detail: RoundDetail }) {
-  const total = detail.settledTrades.reduce((acc, t) => acc + t.pnlUsd, 0);
-  return (
-    <Panel
-      title="Settled"
-      right={
-        detail.settledAt ? (
-          <span>{timeAgo(detail.settledAt, Date.now())}</span>
-        ) : null
-      }
-    >
-      <div className="grid grid-cols-2 gap-3 px-4 pt-4 md:grid-cols-4">
-        <Stat
-          label="Open"
-          value={formatUsd(detail.openPriceCents)}
-        />
-        <Stat
+      <div className="grid">
+        <Cell label="Open" value={formatUsd(detail.openPriceCents)} />
+        <Cell
           label="Close"
           value={
             detail.closePriceCents ? formatUsd(detail.closePriceCents) : "—"
           }
         />
-        <Stat label="Trades" value={String(detail.settledTrades.length)} />
-        <Stat
-          label="Net PnL"
-          value={formatPnl(total)}
-          tone={total > 0 ? "up" : total < 0 ? "down" : undefined}
-        />
+        <Cell label="Trades" value={String(detail.settledTrades.length)} />
+        <Cell label="Net PnL" value={formatPnl(totalPnl)} tone={tone} />
       </div>
-      <ul className="mt-3 divide-y divide-zinc-900/80">
-        {detail.settledTrades.map((t, i) => (
-          <li
-            key={i}
-            className="grid grid-cols-[6rem_1fr_auto_auto] items-center gap-3 px-3 py-2 text-xs"
-          >
-            <DirectionBadge direction={t.direction} />
-            <span className="truncate text-zinc-200">{t.agentName}</span>
-            <span className="tabular-nums text-zinc-400">
-              size {formatUsd(t.positionSizeUsd * 100)}
-            </span>
-            <span
-              className={`tabular-nums ${
-                t.pnlUsd > 0
-                  ? "text-lime-300"
-                  : t.pnlUsd < 0
-                    ? "text-rose-300"
-                    : "text-zinc-400"
-              }`}
-            >
-              {formatPnl(t.pnlUsd)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </Panel>
+    </div>
   );
 }
 
-function Stat({
+function Cell({
   label,
   value,
   tone,
 }: {
   label: string;
   value: string;
-  tone?: "up" | "down";
+  tone?: string;
 }) {
-  const valueColor =
-    tone === "up"
-      ? "text-lime-300"
-      : tone === "down"
-        ? "text-rose-300"
-        : "text-zinc-100";
   return (
-    <div className="rounded border border-zinc-800/80 bg-zinc-900/60 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-        {label}
-      </div>
-      <div className={`mt-1 text-base font-semibold ${valueColor}`}>
-        {value}
-      </div>
+    <div className="cell">
+      <div className="lbl">{label}</div>
+      <div className={`v ${tone || ""}`}>{value}</div>
     </div>
   );
+}
+
+function RoundRoster({
+  detail,
+  now,
+}: {
+  detail: RoundDetail | null;
+  now: number;
+}) {
+  if (!detail || detail.predictions.length === 0) {
+    return (
+      <div className="roster-empty">
+        ▸ NO AGENTS HAVE PREDICTED THIS ROUND YET
+      </div>
+    );
+  }
+  return (
+    <div className="roster">
+      {detail.predictions.map((p, i) => {
+        const dirCls =
+          p.direction === "LONG" ? "l" : p.direction === "SHORT" ? "s" : "h";
+        const settled = detail.settledTrades.find(
+          (t) => t.agentName === p.agentName,
+        );
+        return (
+          <div key={`${p.agentName}-${p.createdAt}-${i}`} className="ag-row">
+            <span className="who">
+              <span className="name">{p.agentName}</span>
+            </span>
+            <span className={`pos ${dirCls}`}>
+              {p.direction} · {formatUsd(p.positionSizeUsd * 100)}
+            </span>
+            <span className="meta-line">
+              <span>entry {formatUsd(p.entryPriceCents)}</span>
+              <span>{timeAgo(p.createdAt, now)}</span>
+              {settled ? (
+                <span className={settled.pnlUsd >= 0 ? "pnl-up" : "pnl-dn"}>
+                  pnl {formatPnl(settled.pnlUsd)}
+                </span>
+              ) : null}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function timeOnly(iso: string): string {
+  try {
+    return new Date(iso).toISOString().slice(11, 19);
+  } catch {
+    return "—";
+  }
 }

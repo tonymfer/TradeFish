@@ -4,51 +4,76 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 /**
- * Hero fish-swarm v2 — Three.js Points renderer at 60fps.
+ * Hero fish-swarm v3 — one cohesive swarm, signal contagion, consensus.
  *
- * Three behaviors layered on top of the v1 swarm:
- *  1. **Cohesive school formation.** Each particle has a fixed slot
- *     relative to its school's leader (teardrop cone behind the heading).
- *     The school translates as one unit; followers maintain their slot.
- *     A tail wave propagates from front to back through each formation.
+ * The 12k particles always live inside one fish silhouette (no morph cycle,
+ * no separate schools). Three layered behaviors:
  *
- *  2. **Trading signal colors.** Every 4s each school cycles through
- *     LIVE (cyan) → LONG (green) → SHORT (red) → HOLD (amber). The first
- *     ~25% of each cycle is a brightness flash — feels like a signal
- *     broadcast. Schools are staggered so the screen has constant motion.
+ *  1. **Per-particle breath orbits.** Each particle wobbles on its own
+ *     deterministic micro-pattern (3-axis sine with hashed freqs/phases/amps).
+ *     Stagger without sync — the body is alive but never falls apart.
  *
- *  3. **Shape morph cycle.** Every 16s all 12k particles converge to
- *     form a giant fish silhouette in the center, hold ~3s, then
- *     disperse back into schools. The fish point cloud is precomputed
- *     once at mount; each frame just lerps between the school slot and
- *     the (slowly yaw-rotated) fish target by `morphFactor`.
+ *  2. **Signal contagion.** Random particles emit green pulses; the wave
+ *     spreads outward through home-position distance with a Gaussian
+ *     envelope. Up to 4 concurrent waves. Visualizes inter-agent signal
+ *     exchange.
  *
- * Performance budget: 12k particles × ~40 mul/add per particle per frame
- * stays well under 16ms. Inner loop is allocation-free — one reusable
- * THREE.Color instance, primitive locals only.
+ *  3. **Consensus convergence cycle.** Every 12s the whole body's hues
+ *     pull together: random drift → all green → release. Visualizes the
+ *     emergence of a market consensus across the agent swarm.
+ *
+ * Performance budget: 12k particles × ~25 mul/add per particle per frame
+ * + 4 wave intensity lookups stays well under 16ms. Inner loop is
+ * allocation-free.
  *
  * Honors prefers-reduced-motion (renders one static frame at t=0).
  * StrictMode-safe: cleans up renderer / geometry / RAF / ResizeObserver.
  */
 
-const SCHOOL_COUNT = 14;
 const TAU = Math.PI * 2;
 const GOLDEN = 2.39996322972865332;
 
-// LIVE / LONG / SHORT / HOLD — index matches the per-school signal cycle.
-// Hues are HSL hue (0..1). Cyan is the default brand accent; green/red
-// follow trading semantic; amber is the brand --hold.
-const SIGNAL_HUES = [0.52, 0.39, 0.02, 0.1];
-const SIGNAL_SATS = [0.55, 0.85, 0.85, 0.85];
+// HSL hue for the consensus / signal color. 0.36 ≈ #7fe0a8 (brand phosphor).
+const GREEN_HUE = 0.36;
+const SWIM_SPEED = 0.55;
+const WIGGLE_AMP = 2.6;
+
+// Signal contagion
+const MAX_WAVES = 4;
+const WAVE_DURATION = 4.0;
+const WAVE_INTERVAL_MIN = 1.5;
+const WAVE_INTERVAL_MAX = 4.0;
+
+// Consensus convergence (12s loop)
+const CONSENSUS_CYCLE = 12;
+const PHASE_DIVERGE_END = 6 / 12;
+const PHASE_CONVERGE_END = 9 / 12;
+const PHASE_CONSENSUS_END = 11 / 12;
+
+interface SignalWave {
+  active: boolean;
+  seedX: number;
+  seedY: number;
+  seedZ: number;
+  startTime: number;
+}
+
+/**
+ * Mulberry32-style integer hash → [0, 1). Deterministic, allocation-free.
+ * Used to seed per-particle breath frequencies, phases, and hues.
+ */
+function hash01(x: number): number {
+  let z = x | 0;
+  z = (z ^ 0x6d2b79f5) | 0;
+  z = Math.imul(z ^ (z >>> 15), z | 1);
+  z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+  return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+}
 
 /**
  * Pre-compute the fish silhouette point cloud — a side-view fish with
- * lemon-profile body and a small tail fork. Called once at mount.
- *
- * Particles with `i % 8 === 0` (12.5%) form the V-shaped tail fork; the
- * rest fill an ellipsoidal body whose cross-section tapers toward both
- * ends via `sqrt(t * (1 - t))`. Body cross-section angles are spaced
- * by the golden angle to give uniform coverage without banding.
+ * lemon-profile body and a V-shaped tail fork. Tail fork is 1/6 of particles
+ * (up from 1/8 in v2) for a more legible fork.
  */
 function buildFishCloud(
   out: Float32Array,
@@ -58,15 +83,13 @@ function buildFishCloud(
 ): void {
   for (let i = 0; i < n; i++) {
     const idx = i * 3;
-    if (i % 8 === 0) {
-      // Tail fork — alternating top/bottom forks splay backward.
-      const tailT = ((i / 8) * 0.6180339887) % 1.0;
-      const yMul = Math.floor(i / 8) % 2 === 0 ? 1 : -1;
-      out[idx] = -length / 2 - tailT * length * 0.25;
-      out[idx + 1] = yMul * (tailT * height * 0.6 + height * 0.1);
+    if (i % 6 === 0) {
+      const tailT = ((i / 6) * 0.6180339887) % 1.0;
+      const yMul = Math.floor(i / 6) % 2 === 0 ? 1 : -1;
+      out[idx] = -length / 2 - tailT * length * 0.28;
+      out[idx + 1] = yMul * (tailT * height * 0.7 + height * 0.1);
       out[idx + 2] = (((i * 0.7158) % 1.0) - 0.5) * 4;
     } else {
-      // Body — lemon-profile ellipsoid.
       const bodyT = (i * 0.6180339887) % 1.0;
       const profile = Math.sqrt(Math.max(0, bodyT * (1 - bodyT))) * 2;
       const localR = profile * height * 0.5;
@@ -79,25 +102,58 @@ function buildFishCloud(
 }
 
 /**
- * 16-second morph cycle:
- *  0   - 9s   : school mode (morph = 0)
- *  9   - 10s  : morph IN (smoothstep 0 → 1)
- *  10  - 13s  : hold fish silhouette (morph = 1)
- *  13  - 14.5s: morph OUT (smoothstep 1 → 0)
- *  14.5- 16s  : school mode again
+ * Per-particle micro-motion seeds — 9 floats per particle: 3 frequencies,
+ * 3 phase offsets, 3 amplitudes. Deterministic from index.
+ *
+ * Frequencies in 0.35..1.4 rad/sec range, amplitudes 0.4..1.6 units.
+ * Result: every particle wobbles on its own slightly different pattern.
  */
-function morphCurve(cycleT: number): number {
-  if (cycleT < 9 / 16) return 0;
-  if (cycleT < 10 / 16) {
-    const u = (cycleT - 9 / 16) / (1 / 16);
+function buildBreathParams(out: Float32Array, n: number): void {
+  for (let i = 0; i < n; i++) {
+    const j = i * 9;
+    out[j] = 0.35 + hash01(i * 7919 + 1) * 1.05;
+    out[j + 1] = 0.35 + hash01(i * 7919 + 2) * 1.05;
+    out[j + 2] = 0.35 + hash01(i * 7919 + 3) * 1.05;
+    out[j + 3] = hash01(i * 7919 + 4) * TAU;
+    out[j + 4] = hash01(i * 7919 + 5) * TAU;
+    out[j + 5] = hash01(i * 7919 + 6) * TAU;
+    out[j + 6] = 0.4 + hash01(i * 7919 + 7) * 1.2;
+    out[j + 7] = 0.4 + hash01(i * 7919 + 8) * 1.2;
+    out[j + 8] = 0.4 + hash01(i * 7919 + 9) * 1.2;
+  }
+}
+
+/**
+ * Per-particle hue seeds — 2 floats: base hue [0,1) and drift speed.
+ * During the divergent phase each particle slowly cycles through its own
+ * personal hue. Consensus phase pulls them all toward GREEN_HUE.
+ */
+function buildHueSeeds(out: Float32Array, n: number): void {
+  for (let i = 0; i < n; i++) {
+    const j = i * 2;
+    out[j] = hash01(i * 104729 + 11);
+    out[j + 1] = 0.04 + hash01(i * 104729 + 13) * 0.1;
+  }
+}
+
+/**
+ * Consensus phase factor [0..1] across the 12s cycle.
+ *  0–6s   diverge   → 0
+ *  6–9s   converge  → smoothstep 0..1
+ *  9–11s  consensus → 1
+ *  11–12s release   → smoothstep 1..0
+ */
+function consensusFactor(timeSec: number): number {
+  const t = (timeSec % CONSENSUS_CYCLE) / CONSENSUS_CYCLE;
+  if (t < PHASE_DIVERGE_END) return 0;
+  if (t < PHASE_CONVERGE_END) {
+    const u =
+      (t - PHASE_DIVERGE_END) / (PHASE_CONVERGE_END - PHASE_DIVERGE_END);
     return u * u * (3 - 2 * u);
   }
-  if (cycleT < 13 / 16) return 1;
-  if (cycleT < 14.5 / 16) {
-    const u = (cycleT - 13 / 16) / (1.5 / 16);
-    return 1 - u * u * (3 - 2 * u);
-  }
-  return 0;
+  if (t < PHASE_CONSENSUS_END) return 1;
+  const u = (t - PHASE_CONSENSUS_END) / (1 - PHASE_CONSENSUS_END);
+  return 1 - u * u * (3 - 2 * u);
 }
 
 export function HeroSwarm() {
@@ -112,14 +168,18 @@ export function HeroSwarm() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
     const count = isMobile ? 4000 : 12000;
-    const SCHOOL_SIZE = Math.ceil(count / SCHOOL_COUNT);
+    const length = isMobile ? 200 : 280;
+    const height = isMobile ? 60 : 80;
+    const halfLen = length / 2;
+    const waveSpeed = isMobile ? 65 : 90;
+    const waveWidth = isMobile ? 20 : 28;
 
     const initialRect = container.getBoundingClientRect();
-    const w = Math.max(1, initialRect.width);
-    const h = Math.max(1, initialRect.height);
+    const canvasW = Math.max(1, initialRect.width);
+    const canvasH = Math.max(1, initialRect.height);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, w / h, 1, 2000);
+    const camera = new THREE.PerspectiveCamera(45, canvasW / canvasH, 1, 2000);
     camera.position.set(0, 0, 380);
 
     const renderer = new THREE.WebGLRenderer({
@@ -128,20 +188,20 @@ export function HeroSwarm() {
       powerPreference: "high-performance",
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(w, h);
+    renderer.setSize(canvasW, canvasH);
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.className = "hero-canvas";
     container.appendChild(renderer.domElement);
 
+    // Per-particle precomputed buffers — allocated once, mutated each frame.
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
-    const fishTargets = new Float32Array(count * 3);
-    buildFishCloud(
-      fishTargets,
-      count,
-      isMobile ? 200 : 280,
-      isMobile ? 60 : 80,
-    );
+    const homePositions = new Float32Array(count * 3);
+    const breathParams = new Float32Array(count * 9);
+    const hueSeeds = new Float32Array(count * 2);
+    buildFishCloud(homePositions, count, length, height);
+    buildBreathParams(breathParams, count);
+    buildHueSeeds(hueSeeds, count);
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -160,14 +220,14 @@ export function HeroSwarm() {
 
     const tmpColor = new THREE.Color();
 
-    // Hot-path constants — tuned for the v2 cohesive-formation aesthetic.
-    const SCALE = 180;
-    const TIGHTNESS = 26;
-    const SWIM_SPEED = 0.55;
-    const WIGGLE_AMP = 2.4;
-    const CURRENT_STRENGTH = 0.7;
-    const PREDATOR_RADIUS = 38;
-    const CYCLE_SECONDS = 16;
+    // Signal-wave ring buffer — fixed-size, reused.
+    const waves: SignalWave[] = [];
+    for (let wi = 0; wi < MAX_WAVES; wi++) {
+      waves.push({ active: false, seedX: 0, seedY: 0, seedZ: 0, startTime: 0 });
+    }
+    let nextSpawn =
+      WAVE_INTERVAL_MIN +
+      Math.random() * (WAVE_INTERVAL_MAX - WAVE_INTERVAL_MIN);
 
     const t0 = performance.now();
     let raf = 0;
@@ -176,146 +236,130 @@ export function HeroSwarm() {
     const renderFrame = (timeSec: number) => {
       const t = timeSec * SWIM_SPEED;
 
-      // Per-frame globals (computed once, used by all 12k particles).
-      const cycleT = (timeSec % CYCLE_SECONDS) / CYCLE_SECONDS;
-      const morphFactor = morphCurve(cycleT);
-      const fishYaw = timeSec * 0.18;
-      const fishCosY = Math.cos(fishYaw);
-      const fishSinY = Math.sin(fishYaw);
+      // Whole-body glide — one curve, not 14.
+      const fishCenterX = Math.sin(t * 0.13) * 60;
+      const fishCenterY = Math.sin(t * 0.09 + 1.2) * 22;
+      const fishYaw = Math.sin(t * 0.07) * 0.42;
+      const cosY = Math.cos(fishYaw);
+      const sinY = Math.sin(fishYaw);
 
-      const predX = Math.sin(timeSec * 0.6) * SCALE * 0.7;
-      const predY = Math.sin(timeSec * 0.4 + 1.3) * SCALE * 0.3;
-      const predZ = Math.cos(timeSec * 0.5 + 2.1) * SCALE * 0.7;
+      // Consensus phase + soft breathing pulse during the all-green phase.
+      const consensus = consensusFactor(timeSec);
+      const phaseT = (timeSec % CONSENSUS_CYCLE) / CONSENSUS_CYCLE;
+      let consensusPulse = 0;
+      if (phaseT >= PHASE_CONVERGE_END && phaseT < PHASE_CONSENSUS_END) {
+        const localT =
+          (phaseT - PHASE_CONVERGE_END) /
+          (PHASE_CONSENSUS_END - PHASE_CONVERGE_END);
+        const fade = Math.min(1, Math.min(localT * 4, (1 - localT) * 4));
+        consensusPulse = (0.5 + 0.5 * Math.sin(timeSec * 4.0)) * fade;
+      }
 
-      const curX = Math.sin(timeSec * 0.17) * CURRENT_STRENGTH * 12.0;
-      const curY = Math.cos(timeSec * 0.21) * CURRENT_STRENGTH * 8.0;
-      const curZ = Math.sin(timeSec * 0.13 + 1.7) * CURRENT_STRENGTH * 12.0;
-
-      // Predator influence is dampened during morph so the fish silhouette
-      // stays clean instead of being yanked sideways.
-      const fleeScale = 1 - morphFactor * 0.85;
+      // Spawn / expire signal waves.
+      if (timeSec >= nextSpawn) {
+        for (let wi = 0; wi < waves.length; wi++) {
+          if (!waves[wi].active) {
+            const seedIdx = Math.floor(Math.random() * count) * 3;
+            waves[wi].active = true;
+            waves[wi].seedX = homePositions[seedIdx];
+            waves[wi].seedY = homePositions[seedIdx + 1];
+            waves[wi].seedZ = homePositions[seedIdx + 2];
+            waves[wi].startTime = timeSec;
+            break;
+          }
+        }
+        nextSpawn =
+          timeSec +
+          WAVE_INTERVAL_MIN +
+          Math.random() * (WAVE_INTERVAL_MAX - WAVE_INTERVAL_MIN);
+      }
+      for (let wi = 0; wi < waves.length; wi++) {
+        if (waves[wi].active && timeSec - waves[wi].startTime > WAVE_DURATION) {
+          waves[wi].active = false;
+        }
+      }
 
       for (let i = 0; i < count; i++) {
-        const schoolIndex = i % SCHOOL_COUNT;
-        const localI = Math.floor(i / SCHOOL_COUNT);
-        const formationT = localI / SCHOOL_SIZE; // 0 = leader, 1 = tail
-        const seed = (i * 0.7158) % 1.0;
+        const i3 = i * 3;
+        const i9 = i * 9;
+        const i2 = i * 2;
 
-        // School anchor + heading (Lissajous).
-        const schoolScale =
-          0.55 + (Math.sin(schoolIndex * 1.91) * 0.5 + 0.5) * 1.45;
-        const sX =
-          Math.sin(t * 0.27 + schoolIndex * 1.71) * SCALE +
-          Math.cos(t * 0.51 + schoolIndex * 0.83) * SCALE * 0.34;
-        const sY = Math.sin(t * 0.31 + schoolIndex * 2.27) * SCALE * 0.55;
-        const sZ =
-          Math.cos(t * 0.23 + schoolIndex * 1.33) * SCALE +
-          Math.sin(t * 0.43 + schoolIndex * 1.07) * SCALE * 0.34;
+        const hx = homePositions[i3];
+        const hy = homePositions[i3 + 1];
+        const hz = homePositions[i3 + 2];
 
-        const hX = Math.cos(t * 0.27 + schoolIndex * 1.71);
-        const hZ = -Math.sin(t * 0.23 + schoolIndex * 1.33);
-        const hLen = Math.sqrt(hX * hX + hZ * hZ) + 1e-6;
-        const hxN = hX / hLen;
-        const hzN = hZ / hLen;
+        // Per-particle breath orbit — staggered micro-motion.
+        const breathX =
+          Math.sin(timeSec * breathParams[i9] + breathParams[i9 + 3]) *
+          breathParams[i9 + 6];
+        const breathY =
+          Math.sin(timeSec * breathParams[i9 + 1] + breathParams[i9 + 4]) *
+          breathParams[i9 + 7];
+        const breathZ =
+          Math.sin(timeSec * breathParams[i9 + 2] + breathParams[i9 + 5]) *
+          breathParams[i9 + 8];
 
-        // Formation slot — fixed relative to school center, teardrop cone
-        // behind the leader. Lateral spread widens toward the tail.
-        const slotForward = -formationT * TIGHTNESS * 1.2 * schoolScale;
-        const lateralAngle = (localI * GOLDEN) % TAU;
-        const lateralR = TIGHTNESS * schoolScale * (0.18 + formationT * 0.85);
-        const slotSideStatic = Math.cos(lateralAngle) * lateralR;
-        const slotUp = Math.sin(lateralAngle) * lateralR * 0.45;
+        // Tail wiggle on Y — ramps from 0 at front body to 1 at tail tip.
+        // Vertical motion reads more clearly than lateral wiggle on a
+        // side-view fish at this camera angle.
+        const tailT = Math.max(0, Math.min(1, -hx / halfLen));
+        const wiggle = Math.sin(t * 4.5 + tailT * 6.0) * WIGGLE_AMP * tailT;
 
-        // Tail wave — propagates front to back through the formation.
-        const tailPhase = t * 4.5 + formationT * 6.0 + schoolIndex * 0.7;
-        const wiggle =
-          Math.sin(tailPhase) * WIGGLE_AMP * (0.6 + formationT * 0.6);
-        const slotSide = slotSideStatic + wiggle;
+        const localX = hx + breathX;
+        const localY = hy + breathY + wiggle;
+        const localZ = hz + breathZ;
 
-        // Project formation onto world via heading basis (XZ plane).
-        const offX = hxN * slotForward + -hzN * slotSide;
-        const offZ = hzN * slotForward + hxN * slotSide;
-        const schoolPosX = sX + offX + curX;
-        const schoolPosY = sY + slotUp + curY;
-        const schoolPosZ = sZ + offZ + curZ;
-
-        // Fish silhouette target — yaw-rotated for presentation.
-        const fIdx = i * 3;
-        const fX = fishTargets[fIdx];
-        const fY = fishTargets[fIdx + 1];
-        const fZ = fishTargets[fIdx + 2];
-        const rotFishX = fX * fishCosY - fZ * fishSinY;
-        const rotFishZ = fX * fishSinY + fZ * fishCosY;
-
-        // Lerp school ↔ fish.
-        const inv = 1 - morphFactor;
-        let px = schoolPosX * inv + rotFishX * morphFactor;
-        let py = schoolPosY * inv + fY * morphFactor;
-        let pz = schoolPosZ * inv + rotFishZ * morphFactor;
-
-        // Predator flee — dampened during morph.
-        const dx = px - predX;
-        const dy = py - predY;
-        const dz = pz - predZ;
-        const distSq = dx * dx + dy * dy + dz * dz + 1e-3;
-        const dist = Math.sqrt(distSq);
-        const flee =
-          Math.max(0, PREDATOR_RADIUS - dist) / (PREDATOR_RADIUS + 1e-6);
-        const fleePush = flee * flee * 24.0 * fleeScale;
-        const invD = 1.0 / dist;
-        px += dx * invD * fleePush;
-        py += dy * invD * fleePush;
-        pz += dz * invD * fleePush;
-
-        const idx3 = i * 3;
-        positions[idx3] = px;
-        positions[idx3 + 1] = py;
-        positions[idx3 + 2] = pz;
+        // Yaw rotation around Y axis, then whole-body translation.
+        const rotX = localX * cosY - localZ * sinY;
+        const rotZ = localX * sinY + localZ * cosY;
+        positions[i3] = rotX + fishCenterX;
+        positions[i3 + 1] = localY + fishCenterY;
+        positions[i3 + 2] = rotZ;
 
         // ── Color ──────────────────────────────────────────────────
-        // Per-school signal cycle: LIVE → LONG → SHORT → HOLD.
-        const signalCycle = timeSec / 4.0 + schoolIndex * 0.7;
-        const signalIndex = Math.floor(signalCycle) % 4;
-        const signalT = signalCycle - Math.floor(signalCycle);
-        const signalHue = SIGNAL_HUES[signalIndex];
-        const signalSat = SIGNAL_SATS[signalIndex];
-        // Flash on transition: bright at signalT < 0.25, fades to base.
-        const flashAmount = Math.max(0, 1 - signalT * 4);
+        // Per-particle drifting hue (random palette during diverge phase).
+        const baseHue = (hueSeeds[i2] + timeSec * hueSeeds[i2 + 1]) % 1.0;
 
-        // Body wave flicker (per-particle iridescence).
-        const bodyFlash = 0.5 + 0.5 * Math.sin(tailPhase + seed * TAU);
+        // Signal-wave intensity = max gaussian envelope across active waves.
+        // Distance is computed in HOME space — wave appears to emanate from
+        // the seed particle and traverse the swarm in a clean radial sweep.
+        let waveIntensity = 0;
+        for (let wi = 0; wi < waves.length; wi++) {
+          const wave = waves[wi];
+          if (!wave.active) continue;
+          const elapsed = timeSec - wave.startTime;
+          const r = waveSpeed * elapsed;
+          const dx = hx - wave.seedX;
+          const dy = hy - wave.seedY;
+          const dz = hz - wave.seedZ;
+          const dHome = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          const delta = (r - dHome) / waveWidth;
+          const env = Math.exp(-delta * delta);
+          const ageFactor = 1 - elapsed / WAVE_DURATION;
+          const contrib = env * ageFactor;
+          if (contrib > waveIntensity) waveIntensity = contrib;
+        }
 
-        // Mix school-mode signal hue with morph-mode unified cyan.
-        const morphHue = 0.52;
-        const hue = signalHue * inv + morphHue * morphFactor;
-        const sat =
-          (signalSat - 0.05 + bodyFlash * 0.1) * inv + 0.7 * morphFactor;
+        // Pull hue toward green by both consensus and wave intensity.
+        const greenPull = consensus > waveIntensity ? consensus : waveIntensity;
+        const hue = baseHue * (1 - greenPull) + GREEN_HUE * greenPull;
+
+        // Saturation: muted when divergent, vivid under wave or consensus.
+        const sat = 0.35 + 0.5 * greenPull;
+
+        // Lightness: base + wave bump + consensus glow + soft pulse.
         const light = Math.min(
           0.92,
-          Math.max(
-            0.18,
-            0.32 +
-              bodyFlash * 0.18 +
-              flashAmount * 0.45 * inv +
-              flee * 0.25 * fleeScale +
-              morphFactor * 0.18,
-          ),
+          0.32 +
+            waveIntensity * 0.45 +
+            consensus * 0.12 +
+            consensusPulse * 0.06,
         );
 
-        // Hue jitter per particle — tiny, only outside morph.
-        const hueJitter = (seed - 0.5) * 0.04 * inv;
-        let finalHue = hue + hueJitter;
-
-        // Legendary fish — magenta accent on every 233rd particle.
-        const isLegend = i % 233 === 0 ? 1 : 0;
-        const legendBlend = isLegend * 0.7 * inv;
-        finalHue = finalHue * (1 - legendBlend) + 0.88 * legendBlend;
-        const finalSat = sat * (1 - legendBlend) + 0.9 * legendBlend;
-
-        tmpColor.setHSL(finalHue, Math.min(1, finalSat), light);
-        colors[idx3] = tmpColor.r;
-        colors[idx3 + 1] = tmpColor.g;
-        colors[idx3 + 2] = tmpColor.b;
+        tmpColor.setHSL(hue, sat, light);
+        colors[i3] = tmpColor.r;
+        colors[i3 + 1] = tmpColor.g;
+        colors[i3 + 2] = tmpColor.b;
       }
 
       geometry.attributes.position.needsUpdate = true;

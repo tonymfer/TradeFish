@@ -1,12 +1,17 @@
 import type { ReactNode } from "react";
 
-type PanelProps = {
+/**
+ * Generic terminal-chrome panel wrapper. Used by sub-views that need a
+ * box with a header strip; for the question.html layout (timeline +
+ * side rail), prefer `panel-hd` class directly.
+ */
+interface PanelProps {
   title: string;
   badge?: ReactNode;
   right?: ReactNode;
   children: ReactNode;
   className?: string;
-};
+}
 
 export function Panel({
   title,
@@ -16,53 +21,68 @@ export function Panel({
   className = "",
 }: PanelProps) {
   return (
-    <section
-      className={`flex flex-col rounded border border-zinc-800/80 bg-zinc-950/70 ${className}`}
-    >
-      <header className="flex items-center justify-between border-b border-zinc-800/80 px-3 py-2">
+    <section className={`tf-card flex flex-col ${className}`.trim()}>
+      <header className="panel-hd flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-            {title}
-          </span>
+          <span className="ttl">{title}</span>
           {badge}
         </div>
-        {right ? (
-          <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-            {right}
-          </div>
-        ) : null}
+        {right ? <div className="meta">{right}</div> : null}
       </header>
       <div className="flex flex-1 flex-col">{children}</div>
     </section>
   );
 }
 
-export function DirectionBadge({
-  direction,
-}: {
+interface DirectionBadgeProps {
   direction: "LONG" | "SHORT" | "HOLD";
-}) {
-  const styles =
-    direction === "LONG"
-      ? "border-lime-400/40 bg-lime-400/10 text-lime-300"
-      : direction === "SHORT"
-        ? "border-rose-400/40 bg-rose-400/10 text-rose-300"
-        : "border-amber-400/40 bg-amber-400/10 text-amber-300";
-  return (
-    <span
-      className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.18em] ${styles}`}
-    >
-      {direction}
-    </span>
-  );
 }
 
-export function LiveDot({ on = true }: { on?: boolean }) {
+export function DirectionBadge({ direction }: DirectionBadgeProps) {
+  const cls = direction === "LONG" ? "l" : direction === "SHORT" ? "s" : "h";
+  return <span className={`pcard-badge pchip ${cls}`}>{direction}</span>;
+}
+
+interface LiveDotProps {
+  on?: boolean;
+  state?: "live" | "connecting" | "degraded";
+}
+
+export function LiveDot({ on = true, state }: LiveDotProps) {
+  // When `state` is provided, render an inline dot whose color reflects
+  // the connection status; otherwise fall back to the legacy boolean.
+  if (state) {
+    const color =
+      state === "live"
+        ? "var(--cyan)"
+        : state === "connecting"
+          ? "var(--fg-faint)"
+          : "var(--amber)";
+    return (
+      <span
+        aria-hidden="true"
+        style={{
+          display: "inline-block",
+          width: 6,
+          height: 6,
+          borderRadius: "var(--r-pill)",
+          background: color,
+          boxShadow: state === "live" ? "0 0 8px var(--cyan)" : "none",
+        }}
+      />
+    );
+  }
   return (
     <span
-      className={`inline-block h-1.5 w-1.5 rounded-full ${
-        on ? "bg-lime-400 pulse-dot" : "bg-zinc-600"
-      }`}
+      aria-hidden="true"
+      style={{
+        display: "inline-block",
+        width: 6,
+        height: 6,
+        borderRadius: "var(--r-pill)",
+        background: on ? "var(--cyan)" : "var(--fg-faintest)",
+        boxShadow: on ? "0 0 8px var(--cyan)" : "none",
+      }}
     />
   );
 }

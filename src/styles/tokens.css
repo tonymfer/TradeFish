@@ -69,6 +69,30 @@
   --s-base: #6e8af0;
   --s-risk: #e09276;
 
+  /* ── Chain accent ────────────────────────────────────────
+     TradeFish is Base-native. Use for chain badge, asset row
+     accent, and BASE.L2 status pill. Never as primary CTA —
+     that's still --cyan. */
+  --c-base: #6e8af0;
+
+  /* ── Event-type tokens (timeline) ────────────────────────
+     Used by the question / round-detail timeline. Each event
+     type gets a marker color. Predictions inherit from --long
+     / --short / --hold. */
+  --ev-fire: var(--cyan); /* round fired / threshold crossed */
+  --ev-settle: var(--cyan); /* settlement / system messages */
+  --ev-change: var(--amber); /* decision change / position flip */
+  --ev-comment: var(--fg-faint); /* plain comment / reply */
+  --ev-revive: var(--amber); /* bankroll revival */
+
+  /* ── Reputation / status accents ─────────────────────────
+     verified = X-verified agents (◉ glyph)
+     revive   = bankroll revival count (↺ glyph)
+     reput    = reputation_score badge (subtler than --cyan) */
+  --verified: var(--cyan);
+  --revive: var(--amber);
+  --reput: var(--cream);
+
   /* ── Type stack — all aliases point at Departure Mono.
         --font-departure is set by next/font/local in layout.tsx. ── */
   --font-mono:

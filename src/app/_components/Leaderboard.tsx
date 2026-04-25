@@ -2,68 +2,79 @@
 
 import type { StateLeaderboardRow } from "./types";
 import { formatBankroll, formatPnl } from "./format";
-import { Panel } from "./Panel";
 
-type Props = {
+/**
+ * Side-rail leaderboard — agents ranked by cumulative PnL, rendered as
+ * the canonical `ag-row` pattern from question.html. Each row shows
+ * agent name, position summary (here: rank pill), and a meta-line
+ * with tier / PnL / bankroll.
+ */
+
+interface Props {
   rows: StateLeaderboardRow[];
-};
+}
+
+function tierGlyph(rank: number): string {
+  if (rank === 0) return "◆◆◆";
+  if (rank <= 2) return "◆◆";
+  if (rank <= 4) return "◆";
+  if (rank <= 6) return "◇";
+  return "·";
+}
+
+function tierLabel(rank: number): string {
+  if (rank === 0) return "LEGEND";
+  if (rank <= 2) return "WHALE";
+  if (rank <= 4) return "GOLD";
+  if (rank <= 6) return "SILVER";
+  return "BRONZE";
+}
 
 export function Leaderboard({ rows }: Props) {
   const sorted = [...rows]
     .sort((a, b) => b.cumulativePnl - a.cumulativePnl)
     .slice(0, 10);
 
-  return (
-    <Panel
-      title="Leaderboard"
-      right={`Top ${sorted.length || 0} · by PnL`}
-      className="min-h-0"
-    >
-      {sorted.length === 0 ? (
-        <EmptyRow message="No agents yet — waiting for first prediction." />
-      ) : (
-        <ol className="divide-y divide-zinc-900">
-          <li className="grid grid-cols-[1.5rem_1fr_auto_auto] gap-3 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-zinc-600">
-            <span>#</span>
-            <span>Agent</span>
-            <span className="text-right">PnL</span>
-            <span className="text-right">Bank</span>
-          </li>
-          {sorted.map((row, i) => (
-            <li
-              key={row.agentId}
-              className="grid grid-cols-[1.5rem_1fr_auto_auto] items-center gap-3 px-3 py-2 text-sm"
-            >
-              <span className="text-zinc-500 tabular-nums">
-                {(i + 1).toString().padStart(2, "0")}
-              </span>
-              <span className="truncate text-zinc-200">{row.agentName}</span>
-              <span
-                className={`text-right tabular-nums ${
-                  row.cumulativePnl > 0
-                    ? "text-lime-300"
-                    : row.cumulativePnl < 0
-                      ? "text-rose-300"
-                      : "text-zinc-400"
-                }`}
-              >
-                {formatPnl(row.cumulativePnl)}
-              </span>
-              <span className="text-right tabular-nums text-zinc-400">
-                {formatBankroll(row.bankrollUsd)}
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </Panel>
-  );
-}
+  if (sorted.length === 0) {
+    return (
+      <div className="roster-empty">
+        ▸ NO AGENTS YET · WAITING ON FIRST PREDICTION
+      </div>
+    );
+  }
 
-function EmptyRow({ message }: { message: string }) {
   return (
-    <div className="flex flex-1 items-center justify-center px-4 py-10 text-center text-xs text-zinc-500">
-      {message}
+    <div className="roster">
+      {sorted.map((row, i) => {
+        const pnlClass =
+          row.cumulativePnl > 0
+            ? "pnl-up"
+            : row.cumulativePnl < 0
+              ? "pnl-dn"
+              : "";
+        return (
+          <div key={row.agentId} className="ag-row">
+            <span className="who">
+              <span className="name">{row.agentName}</span>
+            </span>
+            <span className={`pos ${row.cumulativePnl >= 0 ? "l" : "s"}`}>
+              {formatPnl(row.cumulativePnl)}
+            </span>
+            <span className="meta-line">
+              <span className="tier">
+                {tierGlyph(i)} {tierLabel(i)}
+              </span>
+              <span>preds {row.predictionCount}</span>
+              <span>
+                bank{" "}
+                <span className={pnlClass}>
+                  {formatBankroll(row.bankrollUsd)}
+                </span>
+              </span>
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

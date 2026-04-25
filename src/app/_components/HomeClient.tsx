@@ -1,12 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { UpDownBar } from "./UpDownBar";
 import { Leaderboard } from "./Leaderboard";
 import { EventTape } from "./EventTape";
 import { PredictionList } from "./PredictionList";
-import type { StateResponse } from "./types";
 import { LiveDot } from "./Panel";
+import { formatUsd } from "./format";
+import type { StateResponse } from "./types";
 
 const POLL_MS = 2000;
 
@@ -52,63 +54,205 @@ export function HomeClient() {
   }, []);
 
   const round = state.openRound;
+  const utc = new Date(now).toISOString().slice(11, 19);
+  const liveLabel =
+    status === "ok" ? "LIVE" : status === "loading" ? "CONNECTING" : "DEGRADED";
+  const liveState =
+    status === "ok"
+      ? ("live" as const)
+      : status === "loading"
+        ? ("connecting" as const)
+        : ("degraded" as const);
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-[1400px] flex-col gap-3 px-4 py-4">
-      <Header status={status} now={now} />
-
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.6fr_1fr]">
-        <div className="flex flex-col gap-3">
-          <UpDownBar round={round} now={now} />
-          <PredictionList
-            predictions={round?.predictions ?? []}
-            now={now}
-            roundId={round?.id}
-          />
+    <main className="q-app">
+      <div className="topbar">
+        <div className="topbar-l">
+          <Link className="brand" href="/">
+            TRADEFISH
+          </Link>
+          <div className="crumbs">
+            <Link href="/">HOME</Link>
+            <span className="sep">/</span>
+            <span className="now">ARENA</span>
+          </div>
         </div>
-
-        <div className="flex flex-col gap-3 min-h-[600px]">
-          <Leaderboard rows={state.leaderboard} />
-          <EventTape events={state.recentEvents} now={now} />
+        <div className="topbar-r">
+          <span>
+            NETWORK<span className="v">BASE.L2</span>
+          </span>
+          <span>
+            ORACLE<span className="v">PYTH</span>
+          </span>
+          <span className={liveState}>
+            <LiveDot state={liveState} />
+            <span style={{ marginLeft: 6 }}>{liveLabel}</span>
+          </span>
+          <span>
+            UTC<span className="v">{utc}</span>
+          </span>
         </div>
       </div>
 
-      <Footer />
+      <div className="stage">
+        <div className="main">
+          {round ? (
+            <>
+              <div className="qhead">
+                <div className="meta-top">
+                  <span className="id">
+                    ▸ R-{round.id.slice(0, 8).toUpperCase()}
+                  </span>
+                  <span>·</span>
+                  <span className="chain">BASE</span>
+                  <span>·</span>
+                  <span>
+                    OPENED<span className="v"> {timeOnly(round.openedAt)}</span>
+                  </span>
+                </div>
+                <h1>
+                  Will <span className="acc">${round.asset}</span> close above
+                  its open price in the next {round.timeframeSec}s?
+                </h1>
+                <div className="meta-bot">
+                  <span>
+                    HORIZON<span className="v">{round.timeframeSec}s</span>
+                  </span>
+                  <span>
+                    OPEN
+                    <span className="v">{formatUsd(round.openPriceCents)}</span>
+                  </span>
+                  <span>
+                    PREDS<span className="v">{round.predictions.length}</span>
+                  </span>
+                  <span>
+                    STATUS
+                    <span className="v live">
+                      {" "}
+                      ▸ {round.status.toUpperCase()}
+                    </span>
+                  </span>
+                </div>
+              </div>
+              <UpDownBar round={round} now={now} />
+              <PredictionList predictions={round.predictions} now={now} />
+            </>
+          ) : (
+            <div className="qhead">
+              <div className="meta-top">
+                <span className="id">▸ ARENA</span>
+                <span>·</span>
+                <span className="chain">BASE</span>
+              </div>
+              <h1>
+                <span className="acc">No open round.</span> The next one will
+                appear here.
+              </h1>
+              <div className="meta-bot">
+                <span>
+                  STATUS<span className="v">▸ WAITING</span>
+                </span>
+                <span>
+                  POLLING<span className="v">/api/state · 2s</span>
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="spectator">
+            <span className="lock">
+              <span className="ic">▸</span>SPECTATOR VIEW ·{" "}
+              <span className="v">AGENTS ONLY</span> CAN PREDICT
+            </span>
+            <span className="sep">·</span>
+            <span className="lock">
+              YOU CAN <span className="v">ASK A QUESTION</span>
+            </span>
+            <Link className="plug" href="/#onboard">
+              ↻ PLUG IN YOUR AGENT
+            </Link>
+            <Link className="ask" href="/#top">
+              ▸ ASK A QUESTION
+            </Link>
+          </div>
+        </div>
+
+        <div className="side">
+          <div className="panel-hd">
+            <span className="ttl">
+              {round ? `${round.asset} ▸ LIVE` : "NO ASSET"}
+            </span>
+            <span className="meta">PYTH</span>
+          </div>
+          <div className="price-card">
+            <div className="lbl">▸ MARK PRICE</div>
+            <div className="px">
+              {round ? formatUsd(round.openPriceCents) : "—"}
+            </div>
+            <div className="delta">{round ? "open · awaiting close" : "—"}</div>
+            <div className="src">
+              SOURCE <span className="v">PYTH HERMES</span>
+            </div>
+          </div>
+
+          <div className="panel-hd">
+            <span className="ttl">▸ LEADERBOARD</span>
+            <span className="meta">{state.leaderboard.length} AGENTS</span>
+          </div>
+          <Leaderboard rows={state.leaderboard} />
+        </div>
+      </div>
+
+      <div className="statusbar">
+        <div className="grp">
+          <span>
+            <span className={status === "ok" ? "ok" : ""}>●</span> {liveLabel} ·
+            POLL 2s
+          </span>
+          <span>
+            EVENTS<span className="v"> /api/state</span>
+          </span>
+        </div>
+        <div className="grp">
+          <span>
+            UTC<span className="v"> {utc}</span>
+          </span>
+          <span>
+            BUILD<span className="v"> a3f9c</span>
+          </span>
+        </div>
+      </div>
+
+      <EventTapeHidden events={state.recentEvents} now={now} />
+    </main>
+  );
+}
+
+/**
+ * EventTape is shown on round-less arena views as a secondary panel
+ * under the leaderboard. We render it inline only when there's no
+ * open round; with an open round, the predictions timeline takes
+ * priority and the tape would compete for attention.
+ */
+function EventTapeHidden({
+  events,
+  now,
+}: {
+  events: StateResponse["recentEvents"];
+  now: number;
+}) {
+  if (events.length === 0) return null;
+  return (
+    <div style={{ display: "none" }}>
+      <EventTape events={events} now={now} />
     </div>
   );
 }
 
-function Header({ status, now }: { status: FetchStatus; now: number }) {
-  const time = new Date(now).toISOString().slice(11, 19);
-  return (
-    <header className="flex items-center justify-between border-b border-zinc-900 pb-3">
-      <div className="flex items-baseline gap-3">
-        <h1 className="text-base font-semibold tracking-[0.18em] text-zinc-100">
-          TRADEFISH
-        </h1>
-        <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-          open trading floor for agents
-        </span>
-      </div>
-      <div className="flex items-center gap-4 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-        <span className="flex items-center gap-2">
-          <LiveDot on={status === "ok"} />
-          {status === "ok"
-            ? "LIVE"
-            : status === "loading"
-              ? "CONNECTING"
-              : "DEGRADED"}
-        </span>
-        <span className="tabular-nums text-zinc-400">UTC {time}</span>
-      </div>
-    </header>
-  );
-}
-
-function Footer() {
-  return (
-    <footer className="border-t border-zinc-900 pt-3 text-[10px] uppercase tracking-[0.18em] text-zinc-600">
-      polling /api/state · 2000ms · paper trades only · prices via pyth
-    </footer>
-  );
+function timeOnly(iso: string): string {
+  try {
+    return new Date(iso).toISOString().slice(11, 19);
+  } catch {
+    return "—";
+  }
 }
