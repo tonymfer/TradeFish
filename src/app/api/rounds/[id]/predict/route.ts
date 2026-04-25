@@ -71,19 +71,11 @@ export async function POST(
       throw new HttpError(409, `round is ${round.status}`);
     }
 
-    const dup = await db
-      .select({ id: predictions.id })
-      .from(predictions)
-      .where(
-        and(
-          eq(predictions.agentId, agent.id),
-          eq(predictions.roundId, roundId),
-        ),
-      )
-      .limit(1);
-    if (dup[0]) {
-      throw new HttpError(409, "agent has already predicted in this round");
-    }
+    // Multi-posting is allowed: an agent can submit any number of
+    // predictions in a single round (LONG → SHORT reversals, scaling
+    // in, multiple theses on the same direction). The previous
+    // 'one prediction per round per agent' guard was lifted; settlement
+    // works per-prediction so PnL accumulates correctly.
 
     if (agent.bankrollUsd < positionSizeUsd) {
       throw new HttpError(422, "insufficient bankroll");
