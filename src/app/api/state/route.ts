@@ -69,31 +69,47 @@ export async function GET() {
       };
     }
 
-    // Filter out zero-prediction zombie registrations (e.g. duplicate
-    // sign-ups that never posted a prediction). Without this, the
-    // top-10 by cumulative_pnl includes ties at 0 and arbitrary order
-    // can surface zombies above active personas with 20+ predictions.
-    // Then order by reputation-adjusted PnL primarily, prediction
-    // count as a tiebreaker so active agents always rank above
-    // identical-PnL inactive ones.
-    const lb = await db
-      .select({
-        agentId: agents.id,
-        agentName: agents.name,
-        cumulativePnl: agents.cumulativePnl,
-        bankrollUsd: agents.bankrollUsd,
-        reviveCount: agents.reviveCount,
-        predictionCount: sql<number>`(select count(*)::int from ${predictions} where ${predictions.agentId} = ${agents.id})`,
-        settledCount: sql<number>`(select count(*)::int from ${paperTrades} where ${paperTrades.agentId} = ${agents.id})`,
-      })
-      .from(agents)
-      .where(
-        sql`(select count(*) from ${predictions} where ${predictions.agentId} = ${agents.id}) > 0`,
-      )
-      .orderBy(
-        sql`(${agents.cumulativePnl} - ${agents.reviveCount} * 500) desc, (select count(*) from ${predictions} where ${predictions.agentId} = ${agents.id}) desc`,
-      )
-      .limit(10);
+    // Leaderboard: top 10 active agents by reputation-adjusted PnL.
+    // Inline correlated subqueries for predictionCount/settledCount were
+    // returning 0 in production (Drizzle interpolation collided with the
+    // outer agents alias) — rewritten as raw SQL with explicit aliases.
+    // Filters out zero-prediction zombie registrations (duplicate sign-ups
+    // with the same name as a live persona) so the audience always sees
+    // agents that are actually playing.
+    const lbRaw = await db.execute(sql`
+      SELECT
+        a.id                                AS agent_id,
+        a.name                              AS agent_name,
+        a.cumulative_pnl                    AS cumulative_pnl,
+        a.bankroll_usd                      AS bankroll_usd,
+        a.revive_count                      AS revive_count,
+        COALESCE(p.preds, 0)::int           AS prediction_count,
+        COALESCE(t.settled, 0)::int         AS settled_count
+      FROM agents a
+      LEFT JOIN (
+        SELECT agent_id, count(*)::int AS preds
+        FROM predictions
+        GROUP BY agent_id
+      ) p ON p.agent_id = a.id
+      LEFT JOIN (
+        SELECT agent_id, count(*)::int AS settled
+        FROM paper_trades
+        GROUP BY agent_id
+      ) t ON t.agent_id = a.id
+      WHERE COALESCE(p.preds, 0) > 0
+      ORDER BY (a.cumulative_pnl - a.revive_count * 500) DESC,
+               COALESCE(p.preds, 0) DESC
+      LIMIT 10
+    `);
+    const lb = (lbRaw as unknown as Array<Record<string, unknown>>).map((row) => ({
+      agentId: row.agent_id as string,
+      agentName: row.agent_name as string,
+      cumulativePnl: Number(row.cumulative_pnl ?? 0),
+      bankrollUsd: Number(row.bankroll_usd ?? 0),
+      reviveCount: Number(row.revive_count ?? 0),
+      predictionCount: Number(row.prediction_count ?? 0),
+      settledCount: Number(row.settled_count ?? 0),
+    }));
 
     const recentRounds = await db
       .select({
