@@ -10,10 +10,7 @@
 @import "../styles/tokens.css";
 @import "../styles/components.css";
 @import "../styles/landing.css";
-/* TEMP: Turbopack + Tailwind v4 stale-resolves this single import even
-   though the file exists and is identical to the others. Disabled until
-   the underlying tooling issue is fixed; only affects /rounds/[id] styles. */
-/* @import "../styles/question.css"; */
+@import "../styles/question.css";
 
 /* Tailwind preflight is fine — the design system's body rules in
    tokens.css are loaded after and win. Nothing else to add here. */
