@@ -6,7 +6,11 @@ const BTC_USD_FEED_ID =
 
 const HERMES_URL = `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${BTC_USD_FEED_ID}&parsed=true`;
 
-const CACHE_TTL_MS = 5_000;
+// Live ticker calls /api/oracle/price every 500ms; this cache TTL has
+// to be tighter than that or every other poll serves a stale value.
+// Pyth Hermes itself updates ~400ms, so 250ms is the right floor.
+// In-flight dedup (below) caps real upstream calls at ~1/cache-window.
+const CACHE_TTL_MS = 250;
 
 export type OraclePrice = {
   priceCents: number;

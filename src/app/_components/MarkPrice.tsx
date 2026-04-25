@@ -165,7 +165,7 @@ export function MarkPrice({ openPriceCents }: Props) {
             : "—"}
       </div>
       <div className="src" style={{ position: "relative", zIndex: 1 }}>
-        SOURCE <span className="v">DEXSCREENER · 500ms</span>
+        SOURCE <span className="v">PYTH HERMES · 500ms</span>
       </div>
     </div>
   );

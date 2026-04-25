@@ -1,10 +1,10 @@
-import { getBtcPrice } from "@/lib/oracle";
+import { getLivePrice } from "@/lib/oracle";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const price = await getBtcPrice();
+    const price = await getLivePrice();
     return Response.json(
       {
         asset: "BTC",
