@@ -1003,3 +1003,121 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ─── Live-feel additions: cyan flash, meta thumbnails, thinking pulse ─── */
+
+@keyframes tf-flash-cyan {
+  0% {
+    box-shadow: 0 0 0 0 rgba(168, 216, 232, 0);
+  }
+  18% {
+    box-shadow: 0 0 0 2px rgba(168, 216, 232, 0.55),
+      0 0 24px 2px rgba(168, 216, 232, 0.35);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(168, 216, 232, 0);
+  }
+}
+
+.flash-cyan {
+  animation: tf-flash-cyan 1500ms ease-out 1;
+}
+
+/* Meta thumbnail card (replaces the bare anchor in .sources when an
+   image is available). Fixed 96x64 thumbnail, line-clamped title,
+   monospace host badge. */
+.pcard .meta-card {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 10px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: rgba(13, 24, 48, 0.55);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color var(--t-fast),
+    background var(--t-fast);
+}
+.pcard .meta-card:hover {
+  border-color: var(--line-strong);
+  background: rgba(13, 24, 48, 0.8);
+}
+.pcard .meta-thumb {
+  width: 96px;
+  height: 64px;
+  border-radius: 2px;
+  background-color: rgba(168, 216, 232, 0.05);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: block;
+}
+.pcard .meta-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 2px 4px 2px 0;
+}
+.pcard .meta-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--cream);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+.pcard .meta-title.meta-title-fallback {
+  color: var(--fg-dim);
+  font-size: 10px;
+}
+.pcard .meta-host {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-faintest);
+}
+
+/* Thinking-pulse row: amber breathing dot + cycling persona name. */
+@keyframes tf-thinking-breath {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.thinking-pulse {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 4px 0;
+  border: 1px dashed rgba(255, 184, 74, 0.35);
+  background: rgba(255, 184, 74, 0.04);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--hold);
+  animation: tf-thinking-breath 1800ms ease-in-out infinite;
+}
+.thinking-pulse .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--hold);
+  box-shadow: 0 0 8px 1px rgba(255, 184, 74, 0.5);
+}
+.thinking-pulse .text {
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+

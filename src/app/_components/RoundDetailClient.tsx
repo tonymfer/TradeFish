@@ -8,7 +8,7 @@ import { PredictionList } from "./PredictionList";
 import { LiveDot } from "./Panel";
 import { formatPnl, formatUsd, timeAgo } from "./format";
 
-const POLL_MS = 2000;
+const POLL_MS = 1000;
 
 interface Props {
   roundId: string;
@@ -181,7 +181,11 @@ export function RoundDetailClient({ roundId }: Props) {
                 />
               )}
 
-              <PredictionList predictions={data.predictions} now={now} />
+              <PredictionList
+                predictions={data.predictions}
+                now={now}
+                roundOpen={data.status === "open"}
+              />
             </>
           ) : (
             <div className="qhead">
@@ -254,7 +258,7 @@ export function RoundDetailClient({ roundId }: Props) {
         <div className="grp">
           <span>
             <span className={status === "ok" ? "ok" : ""}>●</span> {liveLabel} ·
-            POLL 2s
+            POLL 1s
           </span>
           <span>
             EVENTS<span className="v"> /api/rounds/{roundId.slice(0, 8)}</span>

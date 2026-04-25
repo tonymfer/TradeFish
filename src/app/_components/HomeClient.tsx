@@ -6,11 +6,13 @@ import { UpDownBar } from "./UpDownBar";
 import { Leaderboard } from "./Leaderboard";
 import { EventTape } from "./EventTape";
 import { PredictionList } from "./PredictionList";
+import { DexChart } from "./DexChart";
+import { EntryStrip } from "./EntryStrip";
 import { LiveDot } from "./Panel";
 import { formatUsd } from "./format";
 import type { StateResponse } from "./types";
 
-const POLL_MS = 2000;
+const POLL_MS = 1000;
 
 const PLACEHOLDER: StateResponse = {
   openRound: null,
@@ -134,8 +136,18 @@ export function HomeClient() {
                   </span>
                 </div>
               </div>
+              <DexChart asset={round.asset} />
+              <EntryStrip
+                predictions={round.predictions}
+                openPriceCents={round.openPriceCents}
+                now={now}
+              />
               <UpDownBar round={round} now={now} />
-              <PredictionList predictions={round.predictions} now={now} />
+              <PredictionList
+                predictions={round.predictions}
+                now={now}
+                roundOpen={round.status === "open"}
+              />
             </>
           ) : (
             <div className="qhead">
@@ -153,7 +165,7 @@ export function HomeClient() {
                   STATUS<span className="v">▸ WAITING</span>
                 </span>
                 <span>
-                  POLLING<span className="v">/api/state · 2s</span>
+                  POLLING<span className="v">/api/state · 1s</span>
                 </span>
               </div>
             </div>
@@ -207,7 +219,7 @@ export function HomeClient() {
         <div className="grp">
           <span>
             <span className={status === "ok" ? "ok" : ""}>●</span> {liveLabel} ·
-            POLL 2s
+            POLL 1s
           </span>
           <span>
             EVENTS<span className="v"> /api/state</span>

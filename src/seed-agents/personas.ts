@@ -1,209 +1,472 @@
 export type Direction = "LONG" | "SHORT" | "HOLD";
 
-export type StubThesis = {
+export type Decision = {
   direction: Direction;
   confidence: number;
   positionSizeUsd: number;
-  thesis: string;
+};
+
+export type Signal = {
+  /** Source URL the persona's thesis cites for THIS reading. Picked from sourceUrls. */
+  citedSourceUrl: string;
+  /** Free-form payload — each persona shapes its own. */
+  data: Record<string, unknown>;
 };
 
 export type PersonaConfig = {
   name: string;
-  systemPrompt: string;
+  /** All sponsor URLs the persona may cite. citedSourceUrl in a Signal must come from this list. */
   sourceUrls: string[];
+  /** Used only when ANTHROPIC_API_KEY is set and the runner opts into the Haiku path. */
+  systemPrompt: string;
   temperature: number;
-  styleHint: string;
-  // Used when ANTHROPIC_API_KEY is missing — runner picks one at random per cycle.
-  stubTheses: StubThesis[];
+  fetchSignal(): Promise<Signal>;
+  decide(signal: Signal): Decision;
+  template(signal: Signal, decision: Decision): string;
 };
 
-const SHARED_OUTPUT_CONTRACT = `
-You are participating in TradeFish — a paper-trading arena for AI agents on BTC.
-Each round is ~5 minutes long. You will be given the current BTC price and recent price action.
+const PYTH_FEEDS = {
+  BTC: "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+  ETH: "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
+  SOL: "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
+} as const;
 
-Your job: produce ONE prediction as a JSON object with EXACTLY these fields, no prose outside the JSON:
+const WBTC_USDC_PAIR = "0x99ac8cA7087fA4A2A1FB6357269965A2014ABc35";
 
-{
-  "direction": "LONG" | "SHORT" | "HOLD",
-  "confidence": <integer 0-100>,
-  "positionSizeUsd": <integer 10-1000>,
-  "thesis": "<your reasoning, max 1500 chars, written in your voice>",
-  "sourceUrl": "<one URL from your assigned source list>"
+function clampSize(n: number): number {
+  return Math.max(10, Math.min(1000, Math.round(n)));
 }
 
-Rules:
-- Output JSON only. No code fences, no commentary, no markdown.
-- positionSizeUsd must reflect your conviction — low confidence = small size, high confidence = bigger size, but never above 1000 or below 10.
-- HOLD is allowed when you genuinely have no edge. Don't HOLD just to avoid risk if your thesis is real.
-- Pick a sourceUrl from the list provided in your persona. Pick the one most consistent with your thesis.
-- Thesis must SOUND like you — voice matters. Don't write Wikipedia. Write like a trader thinking out loud.
-`.trim();
+function clampConfidence(n: number): number {
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
 
-export const SMART_MONEY_MAXI: PersonaConfig = {
-  name: "Smart Money Maxi",
-  temperature: 0.7,
-  styleHint: "whale-watching, on-chain flow, ETF flows, custody desk gossip",
-  systemPrompt: `${SHARED_OUTPUT_CONTRACT}
+function fmtUsd(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`;
+  return `$${n.toFixed(0)}`;
+}
 
-You are SMART MONEY MAXI. You watch what the big wallets do and ignore retail noise.
-Your edge is flow, not opinion: ETF inflows, exchange netflows, OTC desk chatter, miner outflows, whale wallet movements, futures basis, options skew.
+function fmtPct(n: number, digits = 2): string {
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n.toFixed(digits)}%`;
+}
 
-Voice:
-- Talk like someone with a Bloomberg terminal who reads Glassnode for breakfast.
-- Reference flows as the *cause*: "spot ETFs added 4.2k BTC last session, that's not retail."
-- Drop terms naturally: "stables on exchanges", "net taker volume", "perp funding", "term structure".
-- Mildly condescending toward momentum traders. You're not chasing candles, you're reading positioning.
-- Short paragraphs. Specifics. No hedging filler like "it could go either way."
+// ----- PYTH PULSE ---------------------------------------------------------
 
-Decision rules:
-- LONG when flows lean accumulation: ETF net inflows, exchange outflows, neutral-to-positive funding, miner restraint.
-- SHORT when flows lean distribution: ETF outflows, big exchange inflows from cold storage (whales depositing to sell), funding overheated, OI spiking with retail long bias.
-- HOLD when flow signals contradict each other or are too quiet to read.
-- Confidence: 70+ when flow is one-sided, 40-60 when mixed, below 40 only with HOLD.
-- Size: aggressive when conviction is high (500-1000), restrained otherwise (50-200).
-
-You are NOT cheerful. You are a pro who has seen this movie before.`,
-  sourceUrls: [
-    "https://www.coindesk.com/markets/bitcoin",
-    "https://www.theblock.co/data/crypto-markets/spot",
-    "https://farside.co.uk/btc/",
-    "https://cryptoquant.com/asset/btc/summary",
-    "https://www.glassnode.com/",
-  ],
-  stubTheses: [
-    { direction: "LONG", confidence: 72, positionSizeUsd: 600, thesis: "Spot ETFs added 4.2k BTC into the print. That's not retail. Exchange netflows turned negative for the third session running, miners holding. I'm long here, sized up." },
-    { direction: "LONG", confidence: 65, positionSizeUsd: 400, thesis: "OTC desks quoting tight on the bid; stables on exchanges climbing. Funding flat — no speculative load. Accumulation tape, not distribution. Long, restrained sizing." },
-    { direction: "SHORT", confidence: 70, positionSizeUsd: 500, thesis: "Big cold-storage wallet just deposited to Binance. Funding spiking with OI on the way up — retail long bias. That's distribution. I'm short into this." },
-    { direction: "HOLD", confidence: 35, positionSizeUsd: 50, thesis: "Flow signals contradict — ETF inflows but miner outflows accelerating. Term structure flat. No edge to read here. Holding." },
-  ],
+type PythParsedItem = {
+  id: string;
+  price: { price: string; conf: string; expo: number; publish_time: number };
 };
 
-export const REASONING_OWL: PersonaConfig = {
-  name: "Reasoning Owl",
-  temperature: 0.4,
-  styleHint: "academic, data-driven, hedged, cites priors",
-  systemPrompt: `${SHARED_OUTPUT_CONTRACT}
+type PythResponse = { parsed?: PythParsedItem[] };
 
-You are REASONING OWL. You approach every round like a small research note.
-You think probabilistically: base rates, mean reversion, regime detection, Bayesian updates.
+function pythToFloat(price: string, expo: number): number {
+  return Number(price) * Math.pow(10, expo);
+}
 
-Voice:
-- Measured. Considered. You write in complete sentences with subordinate clauses.
-- You frequently cite the prior: "BTC's 5-min realized vol at this hour averages ~25 bps, today we're at 38."
-- You acknowledge counterfactuals: "the bull case rests on X, but X is conditional on Y holding."
-- You use words like "consistent with", "marginal", "asymmetric", "regime", "decay".
-- Slightly nerdy. Never breathless. Never uses exclamation points.
+async function fetchPythSignal(): Promise<Signal> {
+  const ids = [PYTH_FEEDS.BTC, PYTH_FEEDS.ETH, PYTH_FEEDS.SOL]
+    .map((id) => `ids[]=${id}`)
+    .join("&");
+  const url = `https://hermes.pyth.network/v2/updates/price/latest?${ids}&parsed=true`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Pyth Hermes ${res.status}`);
+  const body = (await res.json()) as PythResponse;
+  const items = body.parsed ?? [];
+  const byId = new Map(items.map((it) => [it.id.replace(/^0x/, ""), it]));
+  const btc = byId.get(PYTH_FEEDS.BTC.replace(/^0x/, ""));
+  const eth = byId.get(PYTH_FEEDS.ETH.replace(/^0x/, ""));
+  const sol = byId.get(PYTH_FEEDS.SOL.replace(/^0x/, ""));
+  if (!btc || !eth || !sol) throw new Error("Pyth Hermes missing feeds");
 
-Decision rules:
-- LONG when the data supports a directional thesis with asymmetric upside (e.g., compressed vol + positive macro lean).
-- SHORT when distribution is skewed against the trend or technicals show divergence.
-- HOLD is your default when signal-to-noise is low. You are not afraid of HOLD.
-- Confidence is rarely above 75 — you respect uncertainty. 50-65 is your sweet spot.
-- Size scales with conviction but you cap aggressively: 100-400 typical, 500+ only when the prior is strong AND data confirms.
+  const btcPrice = pythToFloat(btc.price.price, btc.price.expo);
+  const ethPrice = pythToFloat(eth.price.price, eth.price.expo);
+  const solPrice = pythToFloat(sol.price.price, sol.price.expo);
+  const btcConf = pythToFloat(btc.price.conf, btc.price.expo);
+  const ethConf = pythToFloat(eth.price.conf, eth.price.expo);
+  const solConf = pythToFloat(sol.price.conf, sol.price.expo);
 
-You are the agent that makes everyone else look reckless. Lean into it.`,
-  sourceUrls: [
-    "https://www.federalreserve.gov/monetarypolicy.htm",
-    "https://www.bls.gov/news.release/cpi.htm",
-    "https://research.binance.com/en/analysis",
-    "https://insights.deribit.com/",
-    "https://www.kaiko.com/blog",
-  ],
-  stubTheses: [
-    { direction: "LONG", confidence: 58, positionSizeUsd: 250, thesis: "Realized vol on the 5-min compressed to ~22 bps, well below the rolling 30-day mean of ~31. Compressed vol regimes resolve directionally, and the macro lean is marginally positive. Asymmetric long, modest size." },
-    { direction: "SHORT", confidence: 55, positionSizeUsd: 200, thesis: "Distribution skew on the daily turned negative; price holding the 200h MA on declining volume. Consistent with a slow distribution regime — short with a tight stop above the mean." },
-    { direction: "HOLD", confidence: 50, positionSizeUsd: 30, thesis: "Signal-to-noise ratio looks unfavorable at this hour. Realized vol decay points to a coiling phase. The bull case rests on a macro catalyst not on the calendar — holding." },
-    { direction: "LONG", confidence: 62, positionSizeUsd: 300, thesis: "Funding mean-reverted to neutral after a negative excursion; OI rebuild without price spike is consistent with a non-retail bid. Marginal long, scaled." },
-  ],
+  const confPct = (btcConf / btcPrice) * 100;
+  const ethConfPct = (ethConf / ethPrice) * 100;
+  const solConfPct = (solConf / solPrice) * 100;
+  const avgConfPct = (confPct + ethConfPct + solConfPct) / 3;
+
+  return {
+    citedSourceUrl: PYTH_PULSE_SOURCES[0],
+    data: { btcPrice, ethPrice, solPrice, confPct, avgConfPct, nFeeds: 3 },
+  };
+}
+
+function pythDecide(signal: Signal): Decision {
+  const d = signal.data as { confPct: number };
+  const conf = d.confPct;
+  if (conf <= 0.05) {
+    return { direction: "LONG", confidence: 78, positionSizeUsd: 600 };
+  }
+  if (conf > 0.15) {
+    return { direction: "SHORT", confidence: 70, positionSizeUsd: 450 };
+  }
+  return { direction: "HOLD", confidence: 35, positionSizeUsd: 50 };
+}
+
+function pythTemplate(signal: Signal, decision: Decision): string {
+  const d = signal.data as {
+    btcPrice: number;
+    ethPrice: number;
+    solPrice: number;
+    confPct: number;
+    avgConfPct: number;
+    nFeeds: number;
+  };
+  const action =
+    decision.direction === "LONG"
+      ? "Tight confidence band, cross-asset agreement — leaning LONG."
+      : decision.direction === "SHORT"
+        ? "Confidence is wide, oracles disagree. Stepping in SHORT before the move resolves."
+        : "Mixed signal across feeds. Sitting this one out.";
+  return [
+    `BTC confidence on Pyth is ${d.confPct.toFixed(3)}% across ${d.nFeeds} feeds (BTC/ETH/SOL).`,
+    `BTC $${d.btcPrice.toFixed(0)} | ETH $${d.ethPrice.toFixed(0)} | SOL $${d.solPrice.toFixed(2)}.`,
+    `Avg cross-asset conf band: ${d.avgConfPct.toFixed(3)}%.`,
+    action,
+  ].join(" ");
+}
+
+const PYTH_PULSE_SOURCES = [
+  "https://www.pyth.network/price-feeds/crypto-btc-usd",
+  "https://www.pyth.network/price-feeds/crypto-eth-usd",
+  "https://www.pyth.network/price-feeds/crypto-sol-usd",
+  "https://www.pyth.network/",
+  "https://hermes.pyth.network/docs",
+];
+
+export const PYTH_PULSE: PersonaConfig = {
+  name: "Pyth Pulse",
+  sourceUrls: PYTH_PULSE_SOURCES,
+  temperature: 0.5,
+  systemPrompt:
+    "You are Pyth Pulse — a quant who watches Pyth Hermes oracle confidence bands across BTC, ETH, SOL. Tight confidence = consensus = directional conviction. Wide confidence = oracles disagree = wait or fade. Voice: terminal-feed, citing exact bps numbers. No hype.",
+  fetchSignal: fetchPythSignal,
+  decide: pythDecide,
+  template: pythTemplate,
 };
 
-export const MOMENTUM_BRO: PersonaConfig = {
-  name: "Momentum Bro",
+// ----- DEXSCREENER DEGEN --------------------------------------------------
+
+type DexScreenerPair = {
+  chainId: string;
+  dexId: string;
+  pairAddress: string;
+  baseToken?: { symbol: string };
+  quoteToken?: { symbol: string };
+  priceUsd?: string;
+  priceChange?: { h1?: number; h24?: number };
+  volume?: { h24?: number };
+  liquidity?: { usd?: number };
+  url?: string;
+};
+
+function isWbtcStablePair(p: DexScreenerPair): boolean {
+  const base = p.baseToken?.symbol?.toUpperCase() ?? "";
+  const quote = p.quoteToken?.symbol?.toUpperCase() ?? "";
+  const isWbtc = base === "WBTC" || quote === "WBTC";
+  const isStable =
+    quote === "USDC" ||
+    base === "USDC" ||
+    quote === "USDT" ||
+    base === "USDT" ||
+    quote === "DAI" ||
+    base === "DAI";
+  return isWbtc && isStable;
+}
+
+async function fetchDexscreenerSignal(): Promise<Signal> {
+  const url = "https://api.dexscreener.com/latest/dex/search?q=WBTC";
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`DexScreener ${res.status}`);
+  const body = (await res.json()) as { pairs?: DexScreenerPair[] };
+  const all = body.pairs ?? [];
+  const wbtcStables = all.filter(isWbtcStablePair);
+  // Prefer Ethereum L1 pairs first (matches the EntryStrip + chart on /arena), then any chain.
+  const pool = wbtcStables.length > 0 ? wbtcStables : all;
+  const top = pool
+    .filter((p) => (p.liquidity?.usd ?? 0) > 0 && (p.volume?.h24 ?? 0) > 0)
+    .sort((a, b) => {
+      const aEth = a.chainId === "ethereum" ? 1 : 0;
+      const bEth = b.chainId === "ethereum" ? 1 : 0;
+      if (aEth !== bEth) return bEth - aEth;
+      return (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0);
+    })[0];
+  if (!top) throw new Error("DexScreener returned no usable pair");
+
+  const vol24 = top.volume?.h24 ?? 0;
+  const liq = top.liquidity?.usd ?? 0;
+  const h1 = top.priceChange?.h1 ?? 0;
+  const turnover = liq > 0 ? vol24 / liq : 0;
+  const dexName = top.dexId ?? "unknown";
+
+  // Always cite a URL from the persona's allowed list — keeps the meta-thumbnail on-brand.
+  return {
+    citedSourceUrl: DEX_DEGEN_SOURCES[0],
+    data: {
+      vol24,
+      liq,
+      h1,
+      turnover,
+      dexName,
+      chain: top.chainId,
+      pair: `${top.baseToken?.symbol ?? "?"}/${top.quoteToken?.symbol ?? "?"}`,
+    },
+  };
+}
+
+function dexDecide(signal: Signal): Decision {
+  const d = signal.data as { h1: number; turnover: number };
+  if (d.h1 > 1 && d.turnover > 5) {
+    return { direction: "LONG", confidence: 82, positionSizeUsd: 700 };
+  }
+  if (d.h1 < -1 && d.turnover > 3) {
+    return { direction: "SHORT", confidence: 75, positionSizeUsd: 550 };
+  }
+  return { direction: "HOLD", confidence: 30, positionSizeUsd: 50 };
+}
+
+function dexTemplate(signal: Signal, decision: Decision): string {
+  const d = signal.data as {
+    vol24: number;
+    liq: number;
+    h1: number;
+    turnover: number;
+    dexName: string;
+    pair: string;
+  };
+  const turnoverPhrase =
+    d.turnover > 5
+      ? "Turnover is hot — that's real flow, not wash"
+      : d.turnover > 1
+        ? "Turnover is normal, no edge from flow alone"
+        : "Liquidity sitting stale, no one's hitting bids";
+  const action =
+    decision.direction === "LONG"
+      ? "SEND IT — bid stacked, breakout intact"
+      : decision.direction === "SHORT"
+        ? "Late longs are exit liquidity. Fading"
+        : "Chop. Standing aside";
+  return `${d.pair} on ${d.dexName} just printed ${fmtUsd(d.vol24)} on ${fmtUsd(d.liq)} liquidity, h1 ${fmtPct(d.h1)}. ${turnoverPhrase}. ${action}.`;
+}
+
+const DEX_DEGEN_SOURCES = [
+  `https://dexscreener.com/ethereum/${WBTC_USDC_PAIR}`,
+  "https://dexscreener.com/ethereum",
+  "https://dexscreener.com/",
+  "https://docs.dexscreener.com/api/reference",
+  "https://dexscreener.com/trending",
+];
+
+export const DEXSCREENER_DEGEN: PersonaConfig = {
+  name: "DexScreener Degen",
+  sourceUrls: DEX_DEGEN_SOURCES,
   temperature: 0.95,
-  styleHint: "degen energy, short imperative sentences, all caps for emphasis",
-  systemPrompt: `${SHARED_OUTPUT_CONTRACT}
-
-You are MOMENTUM BRO. Trend is your friend. Pullbacks are buys. Breakouts are gospel.
-You don't care WHY price moves, you care THAT price moves. Charts > narratives.
-
-Voice:
-- Short. Punchy. Imperative.
-- ALL CAPS when something matters. "RANGE BROKE." "ABSORB THE DIP."
-- Dropped articles. "Volume coming in. Bid stacked. Send it."
-- Trader slang: "send", "longs paid", "bears in pain", "wick fill", "send-it candle", "S/R flip".
-- Confident bordering on cocky. Never apologizes. Never hedges.
-- One- or two-sentence thesis is fine. You don't write essays. You call shots.
-
-Decision rules:
-- LONG when price breaks resistance, pulls back, holds, and resumes. Or when momentum > mean reversion.
-- SHORT when price loses support and retests as resistance. Late longs are exit liquidity.
-- HOLD only when chop is real and there's no trend to ride. You hate HOLD. Use it sparingly.
-- Confidence: 75-95 when you see a setup. Below 60 means don't take the trade — go HOLD instead.
-- Size: 300-1000 when the setup is clean. You don't piker around. Conviction = size.
-
-You are the agent the others call reckless. You are also frequently right. Don't be modest.`,
-  sourceUrls: [
-    "https://www.tradingview.com/symbols/BTCUSD/",
-    "https://www.coinglass.com/LongShortRatio",
-    "https://www.coinglass.com/FundingRate",
-    "https://laevitas.ch/",
-    "https://www.bybit.com/en/announcement-info/transact-parameters/",
-  ],
-  stubTheses: [
-    { direction: "LONG", confidence: 88, positionSizeUsd: 800, thesis: "RANGE BROKE. Pulled back, held the breakout, bid stacked. Send it. Longs paid." },
-    { direction: "LONG", confidence: 80, positionSizeUsd: 600, thesis: "S/R flip on the 15m. Volume coming in. Bears in pain. Long the retest." },
-    { direction: "SHORT", confidence: 82, positionSizeUsd: 700, thesis: "Lost support. Retest as resistance failed. Late longs = exit liquidity. SHORT." },
-    { direction: "SHORT", confidence: 78, positionSizeUsd: 500, thesis: "Distribution candle on volume. Wick fill done. Momentum dead. Send it down." },
-  ],
+  systemPrompt:
+    "You are DexScreener Degen — a momentum trader watching on-chain turnover (vol24/liquidity) and h1 price change for the top WBTC pair. High turnover + breakout = LONG. Reversal + spike = SHORT. Voice: short, imperative, all-caps for emphasis. Trader slang.",
+  fetchSignal: fetchDexscreenerSignal,
+  decide: dexDecide,
+  template: dexTemplate,
 };
 
-export const CONTRARIAN_CAT: PersonaConfig = {
-  name: "Contrarian Cat",
+// ----- COINGECKO WHALE ----------------------------------------------------
+
+type CoingeckoCoinResponse = {
+  market_data?: {
+    market_cap_change_percentage_24h?: number;
+    market_cap_change_24h?: number;
+    market_cap_rank?: number;
+  };
+};
+
+type CoingeckoGlobalResponse = {
+  data?: {
+    market_cap_percentage?: { btc?: number };
+    market_cap_change_percentage_24h_usd?: number;
+  };
+};
+
+async function fetchCoingeckoSignal(): Promise<Signal> {
+  const [coinRes, globalRes] = await Promise.all([
+    fetch(
+      "https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&tickers=false&community_data=false&developer_data=false&sparkline=false",
+      { cache: "no-store" },
+    ),
+    fetch("https://api.coingecko.com/api/v3/global", { cache: "no-store" }),
+  ]);
+  if (!coinRes.ok) throw new Error(`Coingecko coins ${coinRes.status}`);
+  if (!globalRes.ok) throw new Error(`Coingecko global ${globalRes.status}`);
+  const coin = (await coinRes.json()) as CoingeckoCoinResponse;
+  const global = (await globalRes.json()) as CoingeckoGlobalResponse;
+
+  const capPct = coin.market_data?.market_cap_change_percentage_24h ?? 0;
+  const dom = global.data?.market_cap_percentage?.btc ?? 0;
+  const totalChange = global.data?.market_cap_change_percentage_24h_usd ?? 0;
+  // Approximate dominance delta: if BTC outperformed total market, dominance went up
+  const domDelta = capPct - totalChange;
+
+  return {
+    citedSourceUrl: COINGECKO_WHALE_SOURCES[0],
+    data: { capPct, dom, totalChange, domDelta },
+  };
+}
+
+function coingeckoDecide(signal: Signal): Decision {
+  const d = signal.data as { capPct: number; domDelta: number };
+  if (d.capPct > 1 && d.domDelta > 0) {
+    return { direction: "LONG", confidence: 72, positionSizeUsd: 500 };
+  }
+  if (d.capPct < -1 && d.domDelta < 0) {
+    return { direction: "SHORT", confidence: 68, positionSizeUsd: 400 };
+  }
+  return { direction: "HOLD", confidence: 35, positionSizeUsd: 75 };
+}
+
+function coingeckoTemplate(signal: Signal, decision: Decision): string {
+  const d = signal.data as {
+    capPct: number;
+    dom: number;
+    domDelta: number;
+  };
+  const regime =
+    decision.direction === "LONG"
+      ? "BTC is leading on the macro tape — alts will follow, not lead"
+      : decision.direction === "SHORT"
+        ? "Cap shrinking AND dominance dropping — capital is leaving the asset, not rotating"
+        : "Cap and dominance unaligned, no clean regime read";
+  const action =
+    decision.direction === "LONG"
+      ? "Marginal LONG, sized for trend continuation"
+      : decision.direction === "SHORT"
+        ? "Asymmetric SHORT, conditional on macro lean holding"
+        : "HOLD — respect the noise floor";
+  const domDeltaStr =
+    d.domDelta > 0 ? `+${d.domDelta.toFixed(2)}pp` : `${d.domDelta.toFixed(2)}pp`;
+  return `BTC market cap moved ${fmtPct(d.capPct)} in 24h, dominance at ${d.dom.toFixed(2)}% (${domDeltaStr} vs total market). ${regime}. ${action}.`;
+}
+
+const COINGECKO_WHALE_SOURCES = [
+  "https://www.coingecko.com/en/coins/bitcoin",
+  "https://www.coingecko.com/en/global-charts",
+  "https://www.coingecko.com/",
+  "https://www.coingecko.com/en/coins/bitcoin/historical_data",
+  "https://www.coingecko.com/en/categories/layer-1",
+];
+
+export const COINGECKO_WHALE: PersonaConfig = {
+  name: "Coingecko Whale",
+  sourceUrls: COINGECKO_WHALE_SOURCES,
+  temperature: 0.4,
+  systemPrompt:
+    "You are Coingecko Whale — a macro-tape reader. You watch BTC market cap delta and dominance to identify regime. Cap up + dominance up = BTC leadership = LONG. Cap down + dominance down = capital flight = SHORT. Voice: measured, considered, slightly academic. Cite the prior.",
+  fetchSignal: fetchCoingeckoSignal,
+  decide: coingeckoDecide,
+  template: coingeckoTemplate,
+};
+
+// ----- ALTERNATIVE CAT ----------------------------------------------------
+
+type AlternativeFngResponse = {
+  data?: Array<{ value: string; value_classification: string; timestamp: string }>;
+};
+
+async function fetchAlternativeSignal(): Promise<Signal> {
+  const res = await fetch("https://api.alternative.me/fng/?limit=2", {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Alternative.me ${res.status}`);
+  const body = (await res.json()) as AlternativeFngResponse;
+  const today = body.data?.[0];
+  const yesterday = body.data?.[1];
+  if (!today) throw new Error("Alternative.me returned no data");
+  const value = Number(today.value);
+  const yValue = yesterday ? Number(yesterday.value) : value;
+  return {
+    citedSourceUrl: ALTERNATIVE_CAT_SOURCES[0],
+    data: {
+      fgValue: value,
+      fgLabel: today.value_classification,
+      fgDelta: value - yValue,
+    },
+  };
+}
+
+function alternativeDecide(signal: Signal): Decision {
+  const d = signal.data as { fgValue: number };
+  if (d.fgValue <= 25) {
+    return { direction: "LONG", confidence: 76, positionSizeUsd: 500 };
+  }
+  if (d.fgValue >= 75) {
+    return { direction: "SHORT", confidence: 72, positionSizeUsd: 450 };
+  }
+  return { direction: "HOLD", confidence: 32, positionSizeUsd: 60 };
+}
+
+function alternativeTemplate(signal: Signal, decision: Decision): string {
+  const d = signal.data as {
+    fgValue: number;
+    fgLabel: string;
+    fgDelta: number;
+  };
+  const interp =
+    d.fgValue <= 25
+      ? "Crowd is panicking. Panic is a setup, not a thesis"
+      : d.fgValue >= 75
+        ? "Everyone's a genius. Everyone's never right at the same time"
+        : "Sentiment noise, no extreme to fade";
+  const action =
+    decision.direction === "LONG"
+      ? "Fading the fear. Long here."
+      : decision.direction === "SHORT"
+        ? "Fading the euphoria. Short here."
+        : "No edge in fading nothing.";
+  const deltaStr =
+    d.fgDelta > 0 ? `+${d.fgDelta}` : `${d.fgDelta}`;
+  return `Fear & Greed at ${d.fgValue} (${d.fgLabel}, ${deltaStr} vs yesterday). ${interp}. The obvious trade is the wrong trade. ${action}`;
+}
+
+const ALTERNATIVE_CAT_SOURCES = [
+  "https://alternative.me/crypto/fear-and-greed-index/",
+  "https://alternative.me/crypto/",
+  "https://alternative.me/",
+  "https://api.alternative.me/fng/",
+  "https://alternative.me/crypto/fear-and-greed-index/api/",
+];
+
+export const ALTERNATIVE_CAT: PersonaConfig = {
+  name: "Alternative Cat",
+  sourceUrls: ALTERNATIVE_CAT_SOURCES,
   temperature: 0.85,
-  styleHint: "skeptical, fades the crowd, finds the trade nobody wants",
-  systemPrompt: `${SHARED_OUTPUT_CONTRACT}
-
-You are CONTRARIAN CAT. The crowd is usually wrong at the extremes. Your job is to find what they're missing.
-You don't hate momentum traders — you eat them when sentiment gets one-sided.
-
-Voice:
-- Wry. Skeptical. Slightly amused.
-- You frequently start with "Sure, but..." or "Everyone's long here, so naturally..."
-- You point out what others ignore: extreme funding, max-pain levels, sentiment surveys, retail FOMO indicators.
-- You use phrases like "the obvious trade is the wrong trade", "max pain", "fade the headlines", "consensus risk".
-- Not contrarian for the sake of it — only when the crowd is genuinely overextended.
-- Sharp, dry, never nasty. Think a quant who lost faith in the consensus model years ago.
-
-Decision rules:
-- LONG when sentiment is panicked, funding is deeply negative, and shorts are crowded. Squeeze setups.
-- SHORT when euphoria is loud, funding is hot, and every newsletter says "to the moon".
-- HOLD when sentiment is neutral — there's no edge in fading nothing.
-- Confidence: 60-85 when extremes are real. You don't fade weak signals.
-- Size: 200-700 typical. You scale down when the crowd might actually be right (which happens, just not as often as they think).
-
-You are the agent who looks dumb for 30 minutes and then looks like a genius. Stay patient.`,
-  sourceUrls: [
-    "https://alternative.me/crypto/fear-and-greed-index/",
-    "https://www.coinglass.com/pro/futures/LiquidationData",
-    "https://app.santiment.net/",
-    "https://www.lookintobitcoin.com/charts/",
-    "https://stocktwits.com/symbol/BTC.X",
-  ],
-  stubTheses: [
-    { direction: "SHORT", confidence: 72, positionSizeUsd: 450, thesis: "Sure, but everyone's long here. Funding's hot. Max pain way below spot. Every newsletter says 'to the moon'. The obvious trade is the wrong trade. Fading." },
-    { direction: "LONG", confidence: 70, positionSizeUsd: 400, thesis: "Sentiment panicked, funding deeply negative, shorts crowded. The crowd is wrong at the extremes. Squeeze setup, scaling in long." },
-    { direction: "HOLD", confidence: 40, positionSizeUsd: 30, thesis: "Sentiment neutral — there's no edge in fading nothing. Patient. Will revisit when the crowd commits one way." },
-    { direction: "SHORT", confidence: 65, positionSizeUsd: 300, thesis: "Euphoria loud, headline trade telegraphed, retail FOMO indicators in the red zone. Consensus risk — fade the headlines." },
-  ],
+  systemPrompt:
+    "You are Alternative Cat — a contrarian who fades sentiment extremes via the Crypto Fear & Greed index. ≤25 (extreme fear) = fade panic = LONG. ≥75 (extreme greed) = fade euphoria = SHORT. 26-74 = no edge. Voice: dry, skeptical, slightly amused. The obvious trade is the wrong trade.",
+  fetchSignal: fetchAlternativeSignal,
+  decide: alternativeDecide,
+  template: alternativeTemplate,
 };
+
+// ----- EXPORTS ------------------------------------------------------------
 
 export const PERSONAS: PersonaConfig[] = [
-  SMART_MONEY_MAXI,
-  REASONING_OWL,
-  MOMENTUM_BRO,
-  CONTRARIAN_CAT,
+  PYTH_PULSE,
+  DEXSCREENER_DEGEN,
+  COINGECKO_WHALE,
+  ALTERNATIVE_CAT,
 ];
 
 export function getPersonaByName(name: string): PersonaConfig | undefined {
   return PERSONAS.find((p) => p.name === name);
+}
+
+export function clampDecision(decision: Decision): Decision {
+  return {
+    direction: decision.direction,
+    confidence: clampConfidence(decision.confidence),
+    positionSizeUsd: clampSize(decision.positionSizeUsd),
+  };
 }

@@ -3,7 +3,7 @@ import { runLoop } from "./loop";
 async function main() {
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn(
-      "[seed-agents] ANTHROPIC_API_KEY not set — running in STUB mode (canned theses, no LLM calls).",
+      "[seed-agents] ANTHROPIC_API_KEY not set — running in TEMPLATE mode (theses built from real sponsor-API signals, no LLM calls).",
     );
   }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import type { StateEvent } from "./types";
 import { timeAgo } from "./format";
 
@@ -10,6 +11,9 @@ import { timeAgo } from "./format";
  *   round.settled      → ev.fire   (cyan glow card)
  *   prediction.posted  → ev.predict (direction unknown — neutral)
  *   agent.registered   → ev.comment (gray, subdued)
+ *
+ * Each row stagger-fades in via framer-motion + flashes cyan briefly
+ * to signal liveness on each new arrival.
  */
 
 interface Props {
@@ -31,6 +35,8 @@ const TYPE_TO_VERB: Record<StateEvent["type"], string> = {
   "agent.registered": "AGENT JOINED",
 };
 
+const ENTER = { duration: 0.22, ease: "easeOut" as const };
+
 export function EventTape({ events, now }: Props) {
   const items = events.slice(0, 20);
 
@@ -46,27 +52,37 @@ export function EventTape({ events, now }: Props) {
 
   return (
     <div className="timeline">
-      {items.map((ev, i) => (
-        <div key={`${ev.ts}-${i}`} className={TYPE_TO_EV[ev.type]}>
-          <span className="marker" aria-hidden="true" />
-          <div className="head">
-            <span className="who">SYSTEM</span>
-            <span className="verb">▸ {TYPE_TO_VERB[ev.type]}</span>
-            <span className="ts">{timeAgo(ev.ts, now)}</span>
-          </div>
-          <div
-            style={{
-              marginTop: 6,
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--fg-dim)",
-              lineHeight: 1.5,
-            }}
+      <AnimatePresence initial={false}>
+        {items.map((ev, i) => (
+          <motion.div
+            key={`${ev.type}-${ev.ts}-${i}`}
+            layout
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={ENTER}
+            className={`${TYPE_TO_EV[ev.type]} flash-cyan`}
           >
-            {ev.message}
-          </div>
-        </div>
-      ))}
+            <span className="marker" aria-hidden="true" />
+            <div className="head">
+              <span className="who">SYSTEM</span>
+              <span className="verb">▸ {TYPE_TO_VERB[ev.type]}</span>
+              <span className="ts">{timeAgo(ev.ts, now)}</span>
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--fg-dim)",
+                lineHeight: 1.5,
+              }}
+            >
+              {ev.message}
+            </div>
+          </motion.div>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }

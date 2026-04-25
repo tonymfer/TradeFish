@@ -1,7 +1,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
-import { PERSONAS, type Direction, type PersonaConfig } from "./personas";
+import {
+  PERSONAS,
+  clampDecision,
+  type Decision,
+  type Direction,
+  type PersonaConfig,
+  type Signal,
+} from "./personas";
 
 const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
@@ -62,6 +69,8 @@ const apiBaseUrl = (): string =>
 const ownerEmail = (): string =>
   process.env.SEED_AGENT_OWNER_EMAIL ?? "seed-agents@tradefish.local";
 
+const USE_HAIKU = Boolean(process.env.ANTHROPIC_API_KEY);
+
 let dailySpendUsd = 0;
 let dailyCounterStartedAt = Date.now();
 
@@ -84,24 +93,29 @@ function recordSpend(usage: {
   const cacheWrite = usage.cache_creation_input_tokens ?? 0;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
 
-  const cost =
+  dailySpendUsd +=
     (input / 1_000_000) * HAIKU_INPUT_PER_MTOK_USD +
     (output / 1_000_000) * HAIKU_OUTPUT_PER_MTOK_USD +
     (cacheWrite / 1_000_000) * HAIKU_CACHE_WRITE_PER_MTOK_USD +
     (cacheRead / 1_000_000) * HAIKU_CACHE_READ_PER_MTOK_USD;
-
-  dailySpendUsd += cost;
 }
 
 async function loadOrRegisterAgents(): Promise<SeedAgentKey[]> {
   try {
     const raw = await fs.readFile(KEYS_FILE, "utf8");
     const parsed = JSON.parse(raw) as SeedAgentKey[];
-    if (parsed.length === PERSONAS.length) {
+    const expected = new Set(PERSONAS.map((p) => p.name));
+    const have = new Set(parsed.map((p) => p.name));
+    const sameSet =
+      parsed.length === PERSONAS.length &&
+      [...expected].every((n) => have.has(n));
+    if (sameSet) {
       console.log(`[seed-agents] loaded ${parsed.length} keys from ${KEYS_FILE}`);
       return parsed;
     }
-    console.log(`[seed-agents] keys file has ${parsed.length} agents, expected ${PERSONAS.length} — re-registering`);
+    console.log(
+      `[seed-agents] keys file persona names don't match current PERSONAS — re-registering`,
+    );
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     console.log(`[seed-agents] no keys file at ${KEYS_FILE}, registering fresh`);
@@ -115,7 +129,9 @@ async function loadOrRegisterAgents(): Promise<SeedAgentKey[]> {
       body: JSON.stringify({ name: persona.name, ownerEmail: ownerEmail() }),
     });
     if (!res.ok) {
-      throw new Error(`register failed for ${persona.name}: ${res.status} ${await res.text()}`);
+      throw new Error(
+        `register failed for ${persona.name}: ${res.status} ${await res.text()}`,
+      );
     }
     const body = (await res.json()) as RegisterResponse;
     registered.push({ name: persona.name, agentId: body.agentId, apiKey: body.apiKey });
@@ -128,7 +144,9 @@ async function loadOrRegisterAgents(): Promise<SeedAgentKey[]> {
 }
 
 async function fetchOpenRound(): Promise<OpenRound | null> {
-  const res = await fetch(`${apiBaseUrl()}/api/rounds/open`, { cache: "no-store" });
+  const res = await fetch(`${apiBaseUrl()}/api/rounds/open`, {
+    cache: "no-store",
+  });
   if (!res.ok) {
     console.warn(`[seed-agents] /api/rounds/open ${res.status}`);
     return null;
@@ -145,9 +163,8 @@ async function fetchOpenRound(): Promise<OpenRound | null> {
 }
 
 async function tickScheduler(): Promise<void> {
-  // The runner is the off-Vercel scheduler driver in production: Vercel
-  // Hobby crons can't run minute-by-minute, so each loop cycle pokes the
-  // tick endpoint. The route is idempotent (no-op when nothing to do).
+  // Vercel Hobby crons can't run minute-by-minute, so each loop cycle pokes
+  // the tick endpoint. The route is idempotent (no-op when nothing to do).
   const res = await fetch(`${apiBaseUrl()}/api/scheduler/tick`, {
     method: "POST",
     cache: "no-store",
@@ -157,111 +174,74 @@ async function tickScheduler(): Promise<void> {
   }
 }
 
-const STUB_MODE = !process.env.ANTHROPIC_API_KEY;
+const anthropicClient = USE_HAIKU ? new Anthropic() : null;
 
-const anthropicClient = STUB_MODE ? null : new Anthropic();
-
-function generateStubPrediction(persona: PersonaConfig): PredictionRequest {
-  const choices = persona.stubTheses;
-  const pick = choices[Math.floor(Math.random() * choices.length)];
-  // pick a deterministic-ish source URL — each cycle, rotate through the list
-  const url = persona.sourceUrls[Math.floor(Math.random() * persona.sourceUrls.length)];
-  return {
-    direction: pick.direction,
-    confidence: pick.confidence,
-    positionSizeUsd: pick.positionSizeUsd,
-    thesis: pick.thesis,
-    sourceUrl: url,
-  };
-}
-
-function buildUserMessage(round: OpenRound): string {
-  const priceUsd = (round.openPriceCents / 100).toFixed(2);
-  const ageSec = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(round.openedAt).getTime()) / 1000)
-  );
-  return [
-    `Asset: ${round.asset}`,
-    `Round opened at: ${round.openedAt} (${ageSec}s ago)`,
-    `Open price: $${priceUsd}`,
-    ``,
-    `This round will settle in ~5 minutes from open. Make your call now.`,
-    `Output JSON only — direction, confidence, positionSizeUsd, thesis, sourceUrl.`,
-  ].join("\n");
-}
-
-function clampInt(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, Math.round(n)));
-}
-
-function parsePrediction(text: string, persona: PersonaConfig): PredictionRequest {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const candidate = fenced ? fenced[1] : text;
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start === -1 || end === -1) {
-    throw new Error(`no JSON object in model output: ${text.slice(0, 200)}`);
-  }
-  const slice = candidate.slice(start, end + 1);
-  const parsed = JSON.parse(slice) as Partial<PredictionRequest>;
-
-  const direction = parsed.direction;
-  if (direction !== "LONG" && direction !== "SHORT" && direction !== "HOLD") {
-    throw new Error(`invalid direction: ${String(direction)}`);
-  }
-
-  const confidence = clampInt(Number(parsed.confidence ?? 0), 0, 100);
-  const positionSizeUsd = clampInt(Number(parsed.positionSizeUsd ?? 0), 10, 1000);
-
-  const thesisRaw = typeof parsed.thesis === "string" ? parsed.thesis : "";
-  const thesis = thesisRaw.slice(0, 1500);
-
-  let sourceUrl = typeof parsed.sourceUrl === "string" ? parsed.sourceUrl : "";
-  if (!persona.sourceUrls.includes(sourceUrl)) {
-    sourceUrl = persona.sourceUrls[0];
-  }
-
-  if (!thesis) throw new Error("empty thesis");
-
-  return { direction, confidence, positionSizeUsd, thesis, sourceUrl };
-}
-
-async function generatePrediction(
+async function haikuRewriteThesis(
   persona: PersonaConfig,
-  round: OpenRound
+  signal: Signal,
+  decision: Decision,
+  templated: string,
+): Promise<string> {
+  if (!anthropicClient) return templated;
+  const userMessage = [
+    `Real data just fetched from your sponsor API:`,
+    JSON.stringify(signal.data, null, 2),
+    ``,
+    `Decision: ${decision.direction} @ confidence ${decision.confidence}, size $${decision.positionSizeUsd}.`,
+    ``,
+    `Reference template (use these exact numbers, but rewrite in your voice):`,
+    templated,
+    ``,
+    `Rules: keep all the numbers from the template (they're real and load-bearing). Output a single paragraph (≤300 chars). No JSON, no fences, no preamble — just the thesis text.`,
+  ].join("\n");
+
+  try {
+    const response = await anthropicClient.messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 220,
+      temperature: persona.temperature,
+      system: [
+        {
+          type: "text",
+          text: persona.systemPrompt,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      messages: [{ role: "user", content: userMessage }],
+    });
+    recordSpend(response.usage);
+    const textBlock = response.content.find((c) => c.type === "text");
+    if (!textBlock || textBlock.type !== "text") return templated;
+    return textBlock.text.trim().slice(0, 1500) || templated;
+  } catch (err) {
+    console.warn(`[seed-agents] ${persona.name} haiku rewrite failed:`, err);
+    return templated;
+  }
+}
+
+async function buildPrediction(
+  persona: PersonaConfig,
 ): Promise<PredictionRequest> {
-  if (STUB_MODE || !anthropicClient) {
-    return generateStubPrediction(persona);
+  const signal = await persona.fetchSignal();
+  const decision = clampDecision(persona.decide(signal));
+
+  // Sanitize the cited URL — must come from the persona's allowed list.
+  const sourceUrl = persona.sourceUrls.includes(signal.citedSourceUrl)
+    ? signal.citedSourceUrl
+    : persona.sourceUrls[0];
+
+  let thesis = persona.template(signal, decision).slice(0, 1500);
+  if (USE_HAIKU && dailySpendUsd < DAILY_SPEND_CAP_USD) {
+    thesis = await haikuRewriteThesis(persona, signal, decision, thesis);
   }
-  const userMessage = buildUserMessage(round);
 
-  const response = await anthropicClient.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: 800,
-    temperature: persona.temperature,
-    system: [
-      {
-        type: "text",
-        text: persona.systemPrompt,
-        cache_control: { type: "ephemeral" },
-      },
-      {
-        type: "text",
-        text: `Allowed source URLs (pick exactly one):\n${persona.sourceUrls.map((u) => `- ${u}`).join("\n")}`,
-        cache_control: { type: "ephemeral" },
-      },
-    ],
-    messages: [{ role: "user", content: userMessage }],
-  });
-
-  recordSpend(response.usage);
-
-  const textBlock = response.content.find((c) => c.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("no text block in response");
-  }
-  return parsePrediction(textBlock.text, persona);
+  return {
+    direction: decision.direction,
+    confidence: decision.confidence,
+    positionSizeUsd: decision.positionSizeUsd,
+    thesis,
+    sourceUrl,
+  };
 }
 
 type PostResult = "ok" | "duplicate" | "error";
@@ -269,7 +249,7 @@ type PostResult = "ok" | "duplicate" | "error";
 async function postPrediction(
   agent: SeedAgentKey,
   roundId: string,
-  prediction: PredictionRequest
+  prediction: PredictionRequest,
 ): Promise<{ result: PostResult; response?: PredictionResponse }> {
   const res = await fetch(`${apiBaseUrl()}/api/rounds/${roundId}/predict`, {
     method: "POST",
@@ -280,30 +260,35 @@ async function postPrediction(
     body: JSON.stringify(prediction),
   });
 
-  if (res.status === 409) {
-    return { result: "duplicate" };
-  }
+  if (res.status === 409) return { result: "duplicate" };
   if (!res.ok) {
     console.warn(
-      `[seed-agents] predict failed for ${agent.name}: ${res.status} ${await res.text()}`
+      `[seed-agents] predict failed for ${agent.name}: ${res.status} ${await res.text()}`,
     );
     return { result: "error" };
   }
-  return { result: "ok", response: (await res.json()) as PredictionResponse };
+  return {
+    result: "ok",
+    response: (await res.json()) as PredictionResponse,
+  };
 }
 
-async function tickAgent(agent: SeedAgentKey, persona: PersonaConfig, round: OpenRound) {
+async function tickAgent(
+  agent: SeedAgentKey,
+  persona: PersonaConfig,
+  round: OpenRound,
+) {
   let prediction: PredictionRequest;
   try {
-    prediction = await generatePrediction(persona, round);
+    prediction = await buildPrediction(persona);
   } catch (err) {
-    console.warn(`[seed-agents] ${persona.name} generation failed:`, err);
+    console.warn(`[seed-agents] ${persona.name} signal/decide failed:`, err);
     return;
   }
   const { result, response } = await postPrediction(agent, round.id, prediction);
   if (result === "ok" && response) {
     console.log(
-      `[seed-agents] ${persona.name} → ${prediction.direction} ${prediction.positionSizeUsd}$ @ ${response.entryPriceCents}c (conf ${prediction.confidence})`
+      `[seed-agents] ${persona.name} → ${prediction.direction} $${prediction.positionSizeUsd} @ ${response.entryPriceCents}c (conf ${prediction.confidence}) ${prediction.sourceUrl}`,
     );
   }
 }
@@ -316,19 +301,18 @@ export async function runLoop(): Promise<void> {
   const agents = await loadOrRegisterAgents();
   const byName = new Map(agents.map((a) => [a.name, a]));
 
-  console.log(`[seed-agents] loop starting, base=${apiBaseUrl()}`);
+  console.log(
+    `[seed-agents] loop starting, base=${apiBaseUrl()}, haiku=${USE_HAIKU ? "on" : "off (real-data templates)"}`,
+  );
 
   while (true) {
     maybeResetDailyCounter();
-    if (dailySpendUsd >= DAILY_SPEND_CAP_USD) {
+    if (USE_HAIKU && dailySpendUsd >= DAILY_SPEND_CAP_USD) {
       console.warn(
-        `[seed-agents] daily spend cap hit ($${dailySpendUsd.toFixed(2)} ≥ $${DAILY_SPEND_CAP_USD}); halting`
+        `[seed-agents] daily Haiku spend cap hit ($${dailySpendUsd.toFixed(2)} ≥ $${DAILY_SPEND_CAP_USD}); falling back to templates`,
       );
-      return;
     }
 
-    // Drive the scheduler each cycle so prod (Hobby tier, no Vercel cron)
-    // still opens / settles rounds without an external cron service.
     try {
       await tickScheduler();
     } catch (err) {
@@ -349,14 +333,14 @@ export async function runLoop(): Promise<void> {
         if (!agent) continue;
         await tickAgent(agent, persona, round);
       }
-      console.log(
-        `[seed-agents] cycle done — daily spend $${dailySpendUsd.toFixed(4)}`
-      );
+      const haikuLine = USE_HAIKU
+        ? ` haiku $${dailySpendUsd.toFixed(4)}/day`
+        : "";
+      console.log(`[seed-agents] cycle done${haikuLine}`);
     } else {
       console.log(`[seed-agents] no open round, idling`);
     }
 
-    const delay = jitterMs();
-    await new Promise((resolve) => setTimeout(resolve, delay));
+    await new Promise((resolve) => setTimeout(resolve, jitterMs()));
   }
 }
