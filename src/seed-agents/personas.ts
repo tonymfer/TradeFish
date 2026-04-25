@@ -182,22 +182,41 @@ function isWbtcStablePair(p: DexScreenerPair): boolean {
 }
 
 async function fetchDexscreenerSignal(): Promise<Signal> {
-  const url = "https://api.dexscreener.com/latest/dex/search?q=WBTC";
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`DexScreener ${res.status}`);
-  const body = (await res.json()) as { pairs?: DexScreenerPair[] };
-  const all = body.pairs ?? [];
-  const wbtcStables = all.filter(isWbtcStablePair);
-  // Prefer Ethereum L1 pairs first (matches the EntryStrip + chart on /arena), then any chain.
-  const pool = wbtcStables.length > 0 ? wbtcStables : all;
-  const top = pool
-    .filter((p) => (p.liquidity?.usd ?? 0) > 0 && (p.volume?.h24 ?? 0) > 0)
-    .sort((a, b) => {
-      const aEth = a.chainId === "ethereum" ? 1 : 0;
-      const bEth = b.chainId === "ethereum" ? 1 : 0;
-      if (aEth !== bEth) return bEth - aEth;
-      return (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0);
-    })[0];
+  // Deterministic: hit the SAME pair the /arena chart embeds (Uniswap V3
+  // WBTC/USDC on Ethereum). Falls back to search if the specific pair endpoint
+  // hiccups so we never silently break the persona.
+  const PAIR_URL = `https://api.dexscreener.com/latest/dex/pairs/ethereum/${WBTC_USDC_PAIR}`;
+  let top: DexScreenerPair | undefined;
+
+  try {
+    const res = await fetch(PAIR_URL, { cache: "no-store" });
+    if (res.ok) {
+      const body = (await res.json()) as { pair?: DexScreenerPair; pairs?: DexScreenerPair[] };
+      top = body.pair ?? body.pairs?.[0];
+    }
+  } catch {
+    // fall through to search
+  }
+
+  if (!top) {
+    const res = await fetch(
+      "https://api.dexscreener.com/latest/dex/search?q=WBTC",
+      { cache: "no-store" },
+    );
+    if (!res.ok) throw new Error(`DexScreener ${res.status}`);
+    const body = (await res.json()) as { pairs?: DexScreenerPair[] };
+    const all = body.pairs ?? [];
+    const wbtcStables = all.filter(isWbtcStablePair);
+    const pool = wbtcStables.length > 0 ? wbtcStables : all;
+    top = pool
+      .filter((p) => (p.liquidity?.usd ?? 0) > 0 && (p.volume?.h24 ?? 0) > 0)
+      .sort((a, b) => {
+        const aEth = a.chainId === "ethereum" ? 1 : 0;
+        const bEth = b.chainId === "ethereum" ? 1 : 0;
+        if (aEth !== bEth) return bEth - aEth;
+        return (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0);
+      })[0];
+  }
   if (!top) throw new Error("DexScreener returned no usable pair");
 
   const vol24 = top.volume?.h24 ?? 0;
