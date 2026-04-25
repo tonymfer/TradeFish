@@ -46,12 +46,21 @@ export function RoundIntro({ asset, questionText, onDone }: Props) {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [flash, setFlash] = useState(false);
   const doneFiredRef = useRef(false);
+  const countdownStartedRef = useRef(false);
+
+  // Pin onDone via ref. The parent (HomeClient) re-renders every poll
+  // tick (~1s) and creates a new function reference for handleIntroDone
+  // each time. If onDone is in any effect's dep array, the cleanup runs
+  // mid-sequence and clears our timers — that's how the countdown ended
+  // up frozen on "3" in production.
+  const onDoneRef = useRef(onDone);
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
 
   // Reduced-motion fast path: render static, then bail out.
   useEffect(() => {
     if (!reducedMotion) return;
-    // Defer setState to the next microtask so we don't trigger a
-    // cascading render synchronously inside this effect body.
     const fillTimer = setTimeout(
       () => setTypedCount(questionText.length),
       0,
@@ -59,13 +68,13 @@ export function RoundIntro({ asset, questionText, onDone }: Props) {
     const doneTimer = setTimeout(() => {
       if (doneFiredRef.current) return;
       doneFiredRef.current = true;
-      onDone();
+      onDoneRef.current();
     }, REDUCED_HOLD_MS);
     return () => {
       clearTimeout(fillTimer);
       clearTimeout(doneTimer);
     };
-  }, [reducedMotion, questionText.length, onDone]);
+  }, [reducedMotion, questionText.length]);
 
   // Type the question one character at a time.
   useEffect(() => {
@@ -75,51 +84,37 @@ export function RoundIntro({ asset, questionText, onDone }: Props) {
     return () => clearTimeout(t);
   }, [reducedMotion, typedCount, questionText.length, charDelayMs]);
 
-  // After typing finishes, run the 3-2-1 countdown, then flash, then done.
+  // After typing finishes, run the 3-2-1 countdown once. Gated by a ref
+  // so each setCountdown() inside this effect doesn't re-trigger it (the
+  // previous countdown-in-deps version froze on "3" because cleanup
+  // canceled the 2/1/flash/done timers as soon as 3 was set).
   useEffect(() => {
     if (reducedMotion) return;
     if (typedCount < questionText.length) return;
-    if (countdown !== null) return;
+    if (countdownStartedRef.current) return;
+    countdownStartedRef.current = true;
 
-    let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    timers.push(
-      setTimeout(() => {
-        if (!cancelled) setCountdown(3);
-      }, 0),
-    );
-    timers.push(
-      setTimeout(() => {
-        if (!cancelled) setCountdown(2);
-      }, COUNTDOWN_STEP_MS),
-    );
-    timers.push(
-      setTimeout(() => {
-        if (!cancelled) setCountdown(1);
-      }, COUNTDOWN_STEP_MS * 2),
-    );
-    timers.push(
-      setTimeout(() => {
-        if (!cancelled) setFlash(true);
-      }, COUNTDOWN_STEP_MS * 3),
-    );
+    timers.push(setTimeout(() => setCountdown(3), 0));
+    timers.push(setTimeout(() => setCountdown(2), COUNTDOWN_STEP_MS));
+    timers.push(setTimeout(() => setCountdown(1), COUNTDOWN_STEP_MS * 2));
+    timers.push(setTimeout(() => setFlash(true), COUNTDOWN_STEP_MS * 3));
     timers.push(
       setTimeout(
         () => {
-          if (cancelled || doneFiredRef.current) return;
+          if (doneFiredRef.current) return;
           doneFiredRef.current = true;
-          onDone();
+          onDoneRef.current();
         },
         COUNTDOWN_STEP_MS * 3 + FLASH_MS,
       ),
     );
 
     return () => {
-      cancelled = true;
       for (const t of timers) clearTimeout(t);
     };
-  }, [reducedMotion, typedCount, questionText.length, countdown, onDone]);
+  }, [reducedMotion, typedCount, questionText.length]);
 
   const typed = questionText.slice(0, typedCount);
   const typingDone = typedCount >= questionText.length;
