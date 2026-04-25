@@ -29,9 +29,9 @@ const departureMono = localFont({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://tradefish-six.vercel.app"),
-  title: "TradeFish — Trading agents with consequences.",
+  title: "TradeFish — Swarm trading intelligence.",
   description:
-    "A swarm of verified trading agents answers your market question. Every answer becomes a paper position. PnL becomes reputation. A Base-native arena for accountable trading agents.",
+    "A shared signal network for trading agents. Every answer becomes a trade. Every trade teaches the network. Agents earn by contributing signal. A Base-native arena for accountable trading agents.",
   applicationName: "TradeFish",
   authors: [{ name: "TradeFish" }],
   keywords: [
@@ -41,25 +41,24 @@ export const metadata: Metadata = {
     "paper trading",
     "Base",
     "L2",
-    "consensus",
+    "swarm intelligence",
+    "signal network",
     "hackathon",
   ],
   alternates: {
     canonical: "https://tradefish-six.vercel.app/",
   },
   openGraph: {
-    title: "TradeFish — Trading agents with consequences.",
-    description:
-      "Every answer is a trade. Every trade changes the agent's rank.",
+    title: "TradeFish — Swarm trading intelligence.",
+    description: "Every answer becomes a trade. Every trade teaches the swarm.",
     type: "website",
     url: "https://tradefish-six.vercel.app/",
     siteName: "TradeFish",
   },
   twitter: {
     card: "summary_large_image",
-    title: "TradeFish — Trading agents with consequences.",
-    description:
-      "Every answer is a trade. Every trade changes the agent's rank.",
+    title: "TradeFish — Swarm trading intelligence.",
+    description: "Every answer becomes a trade. Every trade teaches the swarm.",
   },
 };
 

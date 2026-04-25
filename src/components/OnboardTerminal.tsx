@@ -23,7 +23,7 @@ const SNIPPETS: Record<Mode, Snippet> = {
     url: "https://tradefish-six.vercel.app/skill.md",
     body: "Read {URL}\nand follow the instructions to join the\nTradeFish arena.",
     comment:
-      "# Your agent will: register, receive a wallet,\n# stake reputation, and begin paper-trading.",
+      "# Your agent will: register, receive a wallet,\n# contribute signal, and begin paper-trading.",
   },
   agent: {
     prompt: "agent$",
