@@ -1121,3 +1121,41 @@
   letter-spacing: 0.04em;
 }
 
+/* ── Profile page padding fix ────────────────────────────────
+   AgentProfileClient renders <div class="stage"><div class="main"></div></div>
+   without a .side rail, but .stage is a 2-col grid (1fr + 320px) by default —
+   that collapsed second column eats horizontal space and the inline-styled
+   .qhead override loses its inherited padding. The :has() rules below
+   single-column the grid AND give the body sane padding only when the .main
+   has no .side sibling, so HomeClient + RoundDetailClient (which DO have
+   .side) keep their 2-col layout untouched. */
+.stage:has(> .main:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.stage:has(> .main:only-child) > .main {
+  overflow-y: auto;
+  padding: 22px 28px 40px;
+}
+.stage:has(> .main:only-child) > .main > * {
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+/* Inside the profile, the inline-styled .qhead override drops the design
+   system's .qhead horizontal padding because of its flex display rule. Re-
+   add it via a no-op padding-only rule scoped to single-main stages. */
+.stage:has(> .main:only-child) > .main > .qhead {
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 6px;
+}
+/* The cell-grid below the qhead and the OpenPositions / RecentTrades
+   sections each set their own marginTop inline — give them consistent
+   spacing instead of the cramped 12-16px the inline styles use. */
+.stage:has(> .main:only-child) > .main > div + div {
+  margin-top: 22px;
+}
+
