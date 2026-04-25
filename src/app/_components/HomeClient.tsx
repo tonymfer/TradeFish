@@ -14,6 +14,7 @@ import { LiveDot } from "./Panel";
 import { RoundIntro } from "./RoundIntro";
 import { RoundConclusion } from "./RoundConclusion";
 import { RecapCard } from "./RecapCard";
+import { MarkPrice } from "./MarkPrice";
 import { formatUsd } from "./format";
 import type { RoundDetail, RoundStatus, StateResponse } from "./types";
 
@@ -330,18 +331,9 @@ export function HomeClient() {
             <span className="ttl">
               {round ? `${round.asset} ▸ LIVE` : "NO ASSET"}
             </span>
-            <span className="meta">PYTH</span>
+            <span className="meta">DEX</span>
           </div>
-          <div className="price-card">
-            <div className="lbl">▸ MARK PRICE</div>
-            <div className="px">
-              {round ? formatUsd(round.openPriceCents) : "—"}
-            </div>
-            <div className="delta">{round ? "open · awaiting close" : "—"}</div>
-            <div className="src">
-              SOURCE <span className="v">PYTH HERMES</span>
-            </div>
-          </div>
+          <MarkPrice openPriceCents={round?.openPriceCents ?? null} />
 
           <div className="panel-hd">
             <span className="ttl">▸ LEADERBOARD</span>

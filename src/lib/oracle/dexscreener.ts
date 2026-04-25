@@ -2,7 +2,10 @@ import { db } from "@/db/client";
 import { oracleSnapshots } from "@/db/schema";
 import { lookupAssetChart } from "@/app/_components/ASSET_CHART_REGISTRY";
 
-const CACHE_TTL_MS = 1_000;
+// 500ms is the floor — any tighter and we slam DexScreener's API.
+// Client-side MarkPrice polls at 500ms; concurrent requests within a
+// process share one in-flight fetch via the inflight map below.
+const CACHE_TTL_MS = 500;
 
 export type OraclePrice = {
   priceCents: number;
