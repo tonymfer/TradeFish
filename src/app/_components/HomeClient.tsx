@@ -240,8 +240,17 @@ export function HomeClient() {
                   </span>
                 </div>
                 <h1>
-                  Will <span className="acc">${round.asset}</span> close above
-                  its open price in the next {round.timeframeSec}s?
+                  {(round as OpenRoundWithQuestion).questionText ? (
+                    <>
+                      <span className="acc">▸</span>{" "}
+                      {(round as OpenRoundWithQuestion).questionText}
+                    </>
+                  ) : (
+                    <>
+                      Will <span className="acc">${round.asset}</span> close
+                      above its open price in the next {round.timeframeSec}s?
+                    </>
+                  )}
                 </h1>
                 <div className="meta-bot">
                   <span>
