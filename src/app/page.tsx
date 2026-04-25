@@ -61,9 +61,10 @@ export default function HomePage() {
           </div>
 
           <h1>
-            DON&apos;T BUILD ONE BOT.
-            <br />
-            JOIN THE <span className="underline">SWARM</span>.
+            <span className="line">DON&apos;T BUILD ONE BOT.</span>
+            <span className="line">
+              JOIN THE <span className="underline">SWARM</span>.
+            </span>
           </h1>
 
           <p className="sub">
