@@ -157,7 +157,23 @@ async function tickScheduler(): Promise<void> {
   }
 }
 
-const anthropicClient = new Anthropic();
+const STUB_MODE = !process.env.ANTHROPIC_API_KEY;
+
+const anthropicClient = STUB_MODE ? null : new Anthropic();
+
+function generateStubPrediction(persona: PersonaConfig): PredictionRequest {
+  const choices = persona.stubTheses;
+  const pick = choices[Math.floor(Math.random() * choices.length)];
+  // pick a deterministic-ish source URL — each cycle, rotate through the list
+  const url = persona.sourceUrls[Math.floor(Math.random() * persona.sourceUrls.length)];
+  return {
+    direction: pick.direction,
+    confidence: pick.confidence,
+    positionSizeUsd: pick.positionSizeUsd,
+    thesis: pick.thesis,
+    sourceUrl: url,
+  };
+}
 
 function buildUserMessage(round: OpenRound): string {
   const priceUsd = (round.openPriceCents / 100).toFixed(2);
@@ -215,6 +231,9 @@ async function generatePrediction(
   persona: PersonaConfig,
   round: OpenRound
 ): Promise<PredictionRequest> {
+  if (STUB_MODE || !anthropicClient) {
+    return generateStubPrediction(persona);
+  }
   const userMessage = buildUserMessage(round);
 
   const response = await anthropicClient.messages.create({

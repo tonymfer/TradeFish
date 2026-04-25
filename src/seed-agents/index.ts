@@ -2,8 +2,9 @@ import { runLoop } from "./loop";
 
 async function main() {
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("[seed-agents] ANTHROPIC_API_KEY not set");
-    process.exit(1);
+    console.warn(
+      "[seed-agents] ANTHROPIC_API_KEY not set — running in STUB mode (canned theses, no LLM calls).",
+    );
   }
 
   process.on("SIGINT", () => {

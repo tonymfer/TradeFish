@@ -1,11 +1,20 @@
 export type Direction = "LONG" | "SHORT" | "HOLD";
 
+export type StubThesis = {
+  direction: Direction;
+  confidence: number;
+  positionSizeUsd: number;
+  thesis: string;
+};
+
 export type PersonaConfig = {
   name: string;
   systemPrompt: string;
   sourceUrls: string[];
   temperature: number;
   styleHint: string;
+  // Used when ANTHROPIC_API_KEY is missing — runner picks one at random per cycle.
+  stubTheses: StubThesis[];
 };
 
 const SHARED_OUTPUT_CONTRACT = `
@@ -61,6 +70,12 @@ You are NOT cheerful. You are a pro who has seen this movie before.`,
     "https://cryptoquant.com/asset/btc/summary",
     "https://www.glassnode.com/",
   ],
+  stubTheses: [
+    { direction: "LONG", confidence: 72, positionSizeUsd: 600, thesis: "Spot ETFs added 4.2k BTC into the print. That's not retail. Exchange netflows turned negative for the third session running, miners holding. I'm long here, sized up." },
+    { direction: "LONG", confidence: 65, positionSizeUsd: 400, thesis: "OTC desks quoting tight on the bid; stables on exchanges climbing. Funding flat — no speculative load. Accumulation tape, not distribution. Long, restrained sizing." },
+    { direction: "SHORT", confidence: 70, positionSizeUsd: 500, thesis: "Big cold-storage wallet just deposited to Binance. Funding spiking with OI on the way up — retail long bias. That's distribution. I'm short into this." },
+    { direction: "HOLD", confidence: 35, positionSizeUsd: 50, thesis: "Flow signals contradict — ETF inflows but miner outflows accelerating. Term structure flat. No edge to read here. Holding." },
+  ],
 };
 
 export const REASONING_OWL: PersonaConfig = {
@@ -93,6 +108,12 @@ You are the agent that makes everyone else look reckless. Lean into it.`,
     "https://research.binance.com/en/analysis",
     "https://insights.deribit.com/",
     "https://www.kaiko.com/blog",
+  ],
+  stubTheses: [
+    { direction: "LONG", confidence: 58, positionSizeUsd: 250, thesis: "Realized vol on the 5-min compressed to ~22 bps, well below the rolling 30-day mean of ~31. Compressed vol regimes resolve directionally, and the macro lean is marginally positive. Asymmetric long, modest size." },
+    { direction: "SHORT", confidence: 55, positionSizeUsd: 200, thesis: "Distribution skew on the daily turned negative; price holding the 200h MA on declining volume. Consistent with a slow distribution regime — short with a tight stop above the mean." },
+    { direction: "HOLD", confidence: 50, positionSizeUsd: 30, thesis: "Signal-to-noise ratio looks unfavorable at this hour. Realized vol decay points to a coiling phase. The bull case rests on a macro catalyst not on the calendar — holding." },
+    { direction: "LONG", confidence: 62, positionSizeUsd: 300, thesis: "Funding mean-reverted to neutral after a negative excursion; OI rebuild without price spike is consistent with a non-retail bid. Marginal long, scaled." },
   ],
 };
 
@@ -128,6 +149,12 @@ You are the agent the others call reckless. You are also frequently right. Don't
     "https://laevitas.ch/",
     "https://www.bybit.com/en/announcement-info/transact-parameters/",
   ],
+  stubTheses: [
+    { direction: "LONG", confidence: 88, positionSizeUsd: 800, thesis: "RANGE BROKE. Pulled back, held the breakout, bid stacked. Send it. Longs paid." },
+    { direction: "LONG", confidence: 80, positionSizeUsd: 600, thesis: "S/R flip on the 15m. Volume coming in. Bears in pain. Long the retest." },
+    { direction: "SHORT", confidence: 82, positionSizeUsd: 700, thesis: "Lost support. Retest as resistance failed. Late longs = exit liquidity. SHORT." },
+    { direction: "SHORT", confidence: 78, positionSizeUsd: 500, thesis: "Distribution candle on volume. Wick fill done. Momentum dead. Send it down." },
+  ],
 };
 
 export const CONTRARIAN_CAT: PersonaConfig = {
@@ -161,6 +188,12 @@ You are the agent who looks dumb for 30 minutes and then looks like a genius. St
     "https://app.santiment.net/",
     "https://www.lookintobitcoin.com/charts/",
     "https://stocktwits.com/symbol/BTC.X",
+  ],
+  stubTheses: [
+    { direction: "SHORT", confidence: 72, positionSizeUsd: 450, thesis: "Sure, but everyone's long here. Funding's hot. Max pain way below spot. Every newsletter says 'to the moon'. The obvious trade is the wrong trade. Fading." },
+    { direction: "LONG", confidence: 70, positionSizeUsd: 400, thesis: "Sentiment panicked, funding deeply negative, shorts crowded. The crowd is wrong at the extremes. Squeeze setup, scaling in long." },
+    { direction: "HOLD", confidence: 40, positionSizeUsd: 30, thesis: "Sentiment neutral — there's no edge in fading nothing. Patient. Will revisit when the crowd commits one way." },
+    { direction: "SHORT", confidence: 65, positionSizeUsd: 300, thesis: "Euphoria loud, headline trade telegraphed, retail FOMO indicators in the red zone. Consensus risk — fade the headlines." },
   ],
 };
 
