@@ -2,10 +2,15 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 
-const databaseUrl = process.env.DATABASE_URL;
+// Vercel's Supabase marketplace integration injects POSTGRES_URL (pooled)
+// and POSTGRES_URL_NON_POOLING. We also accept the conventional DATABASE_URL.
+// Prefer the pooled connection at runtime — postgres-js with prepare:false
+// handles pgbouncer transaction mode correctly.
+const databaseUrl =
+  process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
 if (!databaseUrl) {
   throw new Error(
-    "DATABASE_URL is not set. Add it to .env.local (Supabase pooled connection string).",
+    "DATABASE_URL (or POSTGRES_URL) is not set. Add it to .env.local — see README.",
   );
 }
 
